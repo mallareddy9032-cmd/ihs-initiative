@@ -1,0 +1,198 @@
+// ============================================================================
+// FILE: prisma/schema.prisma
+// CONTEXT: IHS Cloud Engine — SQLite persistence (Phase 2 local data plane)
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// Spec models (Phase 2 persistence)
+// ----------------------------------------------------------------------------
+
+model Patient {
+  id                 String   @id @default(uuid())
+  ihsUid             String   @unique
+  name               String
+  phone              String?
+  emergencyContact   String?
+  capitationStatus   String   @default("ACTIVE")
+  firstName          String?
+  lastName           String?
+  homeLat            Float    @default(17.7231)
+  homeLng            Float    @default(83.3012)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  incidents      EmergencyIncident[]
+  prescriptions  EPrescription[]
+  appointments   Appointment[]
+  traumaBays     TraumaBay[]
+}
+
+model Operator {
+  id         String   @id @default(uuid())
+  ihsUid     String   @unique
+  fullName   String
+  hashedPin  String
+  role       String // DISPATCHER | PHYSICIAN | SYSTEM_ADMIN
+  status     String   @default("ACTIVE")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model EmergencyIncident {
+  id               String   @id @default(uuid())
+  patientId        String
+  status           String   @default("INITIATED")
+  latitude         Float?
+  longitude        Float?
+  driverId         String?
+  fleetId          String?
+  chiefComplaint   String?
+  driverStatus     String?
+  reservedBay      String?
+  assignedErDoctor String?
+  triagePriority   String?
+  patientAge       Int?
+  assignmentJson   String?
+  createdTimestamp DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  @@index([patientId])
+  @@index([status])
+}
+
+model FleetUnit {
+  id            String   @id @default(uuid())
+  vehicleNumber String   @unique
+  driverName    String
+  status        String   @default("AVAILABLE")
+  fuelLevel     Float    @default(100)
+  standbyPhone  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model TraumaBay {
+  id             String   @id @default(uuid())
+  bayName        String   @unique
+  isOccupied     Boolean  @default(false)
+  assignedDoctor String?
+  patientId      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  patient Patient? @relation(fields: [patientId], references: [id], onDelete: SetNull)
+}
+
+model EPrescription {
+  id           String   @id @default(uuid())
+  patientId    String
+  doctorName   String
+  drugName     String
+  dosage       String
+  instructions String?
+  duration     String?
+  refills      Int      @default(0)
+  issuedAt     DateTime @default(now())
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  @@index([patientId])
+}
+
+model Appointment {
+  id            String   @id @default(uuid())
+  patientId     String
+  type          String
+  scheduledTime DateTime
+  status        String   @default("queued")
+  title         String?
+  clinician     String?
+  whenLabel     String?
+  capitationStatus String @default("COVERED")
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  @@index([patientId])
+  @@index([status])
+}
+
+// ----------------------------------------------------------------------------
+// Compatibility shims for legacy FSM / WORM / telemetry code paths
+// ----------------------------------------------------------------------------
+
+model Subscription {
+  id                        String   @id @default(uuid())
+  patientId                 String
+  status                    String   @default("ACTIVE")
+  doorstepVisitsRemaining   Int      @default(3)
+  createdAt                 DateTime @default(now())
+}
+
+model ClinicalCase {
+  case_id           String    @id @default(uuid())
+  patient_id        String
+  assigned_fleet_id String?
+  current_status    String    @default("INITIATED")
+  is_mlc            Boolean   @default(false)
+  is_locked         Boolean   @default(false)
+  t_a               DateTime?
+  t_m               DateTime?
+  t_e               DateTime?
+  created_at        DateTime  @default(now())
+
+  telemetry DiagnosticTelemetry[]
+}
+
+model DiagnosticTelemetry {
+  telemetry_id            String   @id @default(uuid())
+  case_id                 String
+  device_mac_address      String
+  service_uuid            String
+  reading_value           String
+  variance_fraud_flag     Boolean  @default(false)
+  is_manual_fallback      Boolean  @default(false)
+  photo_verification_b64  String?
+  photo_verification_uuid String?
+  vault_status            String   @default("HOT_STORE")
+  glacier_uri             String?
+  recorded_at             DateTime
+  synced_at               DateTime @default(now())
+
+  clinical_case ClinicalCase @relation(fields: [case_id], references: [case_id], onDelete: Cascade)
+}
+
+model AuditLog {
+  audit_id           String   @id @default(uuid())
+  ihs_uid            String
+  event_type         String
+  actor_id           String
+  cryptographic_hash String
+  immutable_payload  String
+  created_at         DateTime @default(now())
+
+  @@index([ihs_uid])
+}
+
+model FleetAsset {
+  fleet_id              String   @id @default(uuid())
+  operator_name         String
+  status                String   @default("ACTIVE")
+  insurance_expiry_date DateTime
+  fitness_cert_expiry   DateTime
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+}

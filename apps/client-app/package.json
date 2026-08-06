@@ -1,0 +1,52 @@
+{
+  "name": "ihs-client-app",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "android": "react-native run-android",
+    "ios": "react-native run-ios",
+    "ios:pods": "cd ios && pod install && cd ..",
+    "start": "react-native start",
+    "web": "vite",
+    "web:build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "^1.19.3",
+    "@react-native-community/geolocation": "^3.1.0",
+    "@react-navigation/bottom-tabs": "^6.6.1",
+    "@react-navigation/native": "^6.1.9",
+    "@react-navigation/native-stack": "^6.9.17",
+    "@react-navigation/stack": "^6.4.1",
+    "crypto-js": "^4.1.1",
+    "leaflet": "^1.9.4",
+    "react": "18.2.0",
+    "react-dom": "^18.2.0",
+    "react-native": "0.72.4",
+    "react-native-gesture-handler": "^2.32.0",
+    "react-native-safe-area-context": "^4.7.4",
+    "react-native-screens": "^3.27.0",
+    "react-native-web": "^0.19.12"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.20.0",
+    "@babel/preset-env": "^7.20.0",
+    "@babel/runtime": "^7.20.0",
+    "@react-native-community/cli": "^20.2.0",
+    "@react-native/metro-config": "^0.72.11",
+    "@tsconfig/react-native": "^3.0.0",
+    "@types/crypto-js": "^4.1.1",
+    "@types/leaflet": "^1.9.22",
+    "@types/react": "^18.2.6",
+    "@types/react-dom": "^18.2.0",
+    "@types/react-native": "^0.72.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "metro-react-native-babel-preset": "0.76.8",
+    "typescript": "^5.0.4",
+    "vite": "^5.4.11"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}

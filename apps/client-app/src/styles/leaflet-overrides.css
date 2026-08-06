@@ -1,0 +1,18 @@
+/* Apple Maps–style light basemap overrides */
+.leaflet-container {
+  background: #e8e8ed !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+}
+
+.leaflet-popup-content-wrapper {
+  background: rgba(255, 255, 255, 0.92);
+  color: #1c1c1e;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 16px;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+}
+
+.leaflet-popup-tip {
+  background: #fff;
+}

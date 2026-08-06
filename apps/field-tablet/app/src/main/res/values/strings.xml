@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">IHS Field Tablet</string>
+    <string name="start_scanner">Start Medical BLE Scanner</string>
+    <string name="stop_scanner">Stop Scanner</string>
+    <string name="sync_now">Sync Telemetry Now</string>
+</resources>
