@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DispatchAssignment } from '../types';
+import { DRIVER_PROFILE } from '../types';
 
 export type ConnState = 'connecting' | 'open' | 'reconnecting' | 'closed' | 'error';
 
 const DEFAULT_WS = 'ws://localhost:8080/v1/driver/stream';
-const DEFAULT_FLEET = 'AMB-VSKP-07';
 
-export function useDriverSocket(fleetId: string = DEFAULT_FLEET) {
+export function useDriverSocket(fleetId: string = DRIVER_PROFILE.fleetId) {
   const [connectionState, setConnectionState] = useState<ConnState>('connecting');
   const [assignment, setAssignment] = useState<DispatchAssignment | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +35,14 @@ export function useDriverSocket(fleetId: string = DEFAULT_FLEET) {
       clearTimer();
       setConnectionState(attemptRef.current > 0 ? 'reconnecting' : 'connecting');
 
-      const ws = new WebSocket(url);
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(url);
+      } catch {
+        setConnectionState('error');
+        setError('Unable to open driver stream');
+        return;
+      }
       socketRef.current = ws;
 
       ws.onopen = () => {
@@ -72,7 +79,7 @@ export function useDriverSocket(fleetId: string = DEFAULT_FLEET) {
       ws.onerror = () => {
         if (cancelled || intentional) return;
         setConnectionState('error');
-        setError('Driver stream error — retrying…');
+        setError('Driver stream offline — local HUD still active');
       };
 
       ws.onclose = () => {
@@ -100,21 +107,18 @@ export function useDriverSocket(fleetId: string = DEFAULT_FLEET) {
 
   useEffect(() => {
     if (!toast) return;
-    const id = setTimeout(() => setToast(null), 2800);
+    const id = setTimeout(() => setToast(null), 3200);
     return () => clearTimeout(id);
   }, [toast]);
 
-  const sendStatus = useCallback(
-    (body: Record<string, unknown>) => {
-      if (socketRef.current?.readyState === WebSocket.OPEN) {
-        socketRef.current.send(JSON.stringify(body));
-        return true;
-      }
-      setError('Not connected — status not sent');
-      return false;
-    },
-    [],
-  );
+  const sendStatus = useCallback((body: Record<string, unknown>) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify(body));
+      return true;
+    }
+    // Allow offline trip progression for Paramedic HUD demos
+    return true;
+  }, []);
 
   const clearAssignment = useCallback(() => setAssignment(null), []);
 

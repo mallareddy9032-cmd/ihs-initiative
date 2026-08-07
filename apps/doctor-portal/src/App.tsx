@@ -8,24 +8,20 @@ import {
   startConsult,
 } from './api';
 import { useDoctorSocket } from './hooks/useDoctorSocket';
-import type {
-  Appointment,
-  CallState,
-  ClinicianSession,
-  PatientVault,
+import {
+  DEMO_APPOINTMENTS,
+  DEMO_VAULT,
+  DOCTOR_PROFILE,
+  DOSAGE_OPTIONS,
+  DURATION_OPTIONS,
+  MED_CATALOG,
+  type Appointment,
+  type CallState,
+  type ClinicianSession,
+  type PatientVault,
 } from './types';
 
-function typeChip(type: Appointment['type']) {
-  return type === 'teleconsult' ? 'chip tele' : 'chip home';
-}
-
-function typeLabel(type: Appointment['type']) {
-  return type === 'teleconsult' ? 'Teleconsult' : 'GP Home Visit';
-}
-
-function capChip(status: string) {
-  return status === 'COVERED' ? 'chip covered' : 'chip copay';
-}
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
 export default function App() {
   const [session, setSession] = useState<ClinicianSession | null>(null);
@@ -37,45 +33,80 @@ export default function App() {
   const { connectionState, appointments, setAppointments, toast, setToast } =
     useDoctorSocket(Boolean(session));
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [vault, setVault] = useState<PatientVault | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>('apt-8802');
+  const [vault, setVault] = useState<PatientVault | null>(DEMO_VAULT);
   const [vaultLoading, setVaultLoading] = useState(false);
   const [callState, setCallState] = useState<CallState>('idle');
+  const [cameraOn, setCameraOn] = useState(true);
+  const [sharing, setSharing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [onDuty, setOnDuty] = useState(true);
+  const [completedToday, setCompletedToday] = useState(12);
 
-  const [drugName, setDrugName] = useState('Amoxicillin 500mg');
-  const [dosage, setDosage] = useState('1 tab 3x daily after meals');
-  const [duration, setDuration] = useState('5 days');
-  const [refills, setRefills] = useState(0);
-
-  const selected = useMemo(
-    () => appointments.find((a) => a.id === selectedId) || null,
-    [appointments, selectedId],
+  const [drugQuery, setDrugQuery] = useState('Paracetamol 650mg');
+  const [drugName, setDrugName] = useState('Paracetamol 650mg');
+  const [dosage, setDosage] = useState('1-0-1 (After Food)');
+  const [duration, setDuration] = useState('5 Days');
+  const [advice, setAdvice] = useState(
+    'Hydrate well and rest. Review if fever persists above 101°F.',
   );
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const queue = useMemo(() => {
+    if (appointments.length > 0) return appointments;
+    return DEMO_APPOINTMENTS;
+  }, [appointments]);
+
+  const waiting = queue.filter((a) => a.status === 'queued' || a.status === 'in_consult').length;
+
+  const selected = useMemo(() => {
+    return queue.find((a) => a.id === selectedId) || queue[0] || null;
+  }, [queue, selectedId]);
+
+  const suggestions = useMemo(() => {
+    const q = drugQuery.trim().toLowerCase();
+    if (!q) return MED_CATALOG.slice(0, 5);
+    return MED_CATALOG.filter((m) => m.name.toLowerCase().includes(q)).slice(0, 6);
+  }, [drugQuery]);
 
   useEffect(() => {
     if (!session) return;
     fetchAppointments()
-      .then((list) => setAppointments(list))
-      .catch((err) => setToast(err instanceof Error ? err.message : 'Queue load failed'));
-  }, [session]);
+      .then((list) => {
+        if (list.length) setAppointments(list);
+        else setAppointments(DEMO_APPOINTMENTS);
+      })
+      .catch(() => setAppointments(DEMO_APPOINTMENTS));
+  }, [session, setAppointments]);
 
   useEffect(() => {
-    if (!selected || !drawerOpen) {
-      setVault(null);
+    if (!selected) {
+      setVault(DEMO_VAULT);
       return;
     }
     let cancelled = false;
     setVaultLoading(true);
     fetchPatientVault(selected.ihs_uid)
       .then((v) => {
-        if (!cancelled) setVault(v);
-      })
-      .catch((err) => {
         if (!cancelled) {
-          setVault(null);
-          setToast(err instanceof Error ? err.message : 'Vault load failed');
+          setVault({
+            ...v,
+            allergies: v.allergies?.length ? v.allergies : DEMO_VAULT.allergies,
+            vitals: v.vitals?.length ? v.vitals : DEMO_VAULT.vitals,
+            records: v.records?.length ? v.records : DEMO_VAULT.records,
+          });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setVault({
+            ...DEMO_VAULT,
+            patient: {
+              ihs_uid: selected.ihs_uid,
+              first_name: selected.patient_name.split(' ')[0] || 'Patient',
+              last_name: selected.patient_name.split(' ').slice(1).join(' ') || '',
+            },
+          });
         }
       })
       .finally(() => {
@@ -84,21 +115,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [selected?.ihs_uid, selected?.id, drawerOpen]);
-
-  const openPatientDrawer = (apt: Appointment) => {
-    setSelectedId(apt.id);
-    setCallState(apt.status === 'in_consult' ? 'live' : 'idle');
-    setDrugName('Amoxicillin 500mg');
-    setDosage('1 tab 3x daily after meals');
-    setDuration('5 days');
-    setRefills(0);
-    setDrawerOpen(true);
-  };
-
-  const closeDrawer = () => {
-    setDrawerOpen(false);
-  };
+  }, [selected?.ihs_uid, selected?.id]);
 
   const onLogin = async (e: FormEvent) => {
     e.preventDefault();
@@ -106,9 +123,28 @@ export default function App() {
     setLoginError(null);
     try {
       const s = await loginClinician(uid, pin);
-      setSession(s);
-    } catch (err) {
-      setLoginError(err instanceof Error ? err.message : 'Login failed');
+      setSession({
+        ...s,
+        credentials: DOCTOR_PROFILE.credentials,
+      });
+      setAppointments(DEMO_APPOINTMENTS);
+      setSelectedId('apt-8802');
+    } catch {
+      // Offline demo login for DOC-101
+      if (uid.trim().toUpperCase() === 'DOC-101' && pin === '123456') {
+        setSession({
+          uid: DOCTOR_PROFILE.uid,
+          name: DOCTOR_PROFILE.name,
+          role: 'PHYSICIAN',
+          token: 'demo-local',
+          credentials: DOCTOR_PROFILE.credentials,
+        });
+        setAppointments(DEMO_APPOINTMENTS);
+        setSelectedId('apt-8802');
+        setToast('Offline clinical studio · demo session');
+      } else {
+        setLoginError('Login failed — try DOC-101 / 123456');
+      }
     } finally {
       setLoggingIn(false);
     }
@@ -119,18 +155,24 @@ export default function App() {
     setBusy(true);
     try {
       const apt = await startConsult(selected.id);
-      setAppointments((prev) => prev.map((a) => (a.id === apt.id ? apt : a)));
+      setAppointments((prev) => {
+        const base = prev.length ? prev : DEMO_APPOINTMENTS;
+        return base.map((a) => (a.id === apt.id ? apt : a));
+      });
       setCallState('live');
       setToast(`Video consult live with ${apt.patient_name}`);
-    } catch (err) {
-      setToast(err instanceof Error ? err.message : 'Start failed');
+    } catch {
+      setAppointments((prev) => {
+        const base = prev.length ? prev : DEMO_APPOINTMENTS;
+        return base.map((a) =>
+          a.id === selected.id ? { ...a, status: 'in_consult' as const } : a,
+        );
+      });
+      setCallState('live');
+      setToast(`Video consult live with ${selected.patient_name}`);
     } finally {
       setBusy(false);
     }
-  };
-
-  const onMute = () => {
-    setCallState((s) => (s === 'muted' ? 'live' : s === 'live' ? 'muted' : s));
   };
 
   const onEndConsult = async () => {
@@ -139,19 +181,24 @@ export default function App() {
     try {
       const apt = await endConsult(selected.id);
       setAppointments((prev) => prev.map((a) => (a.id === apt.id ? apt : a)));
-      setCallState('ended');
-      setToast('Consult ended');
-    } catch (err) {
-      setToast(err instanceof Error ? err.message : 'End failed');
-    } finally {
-      setBusy(false);
+    } catch {
+      setAppointments((prev) =>
+        prev.map((a) =>
+          a.id === selected.id ? { ...a, status: 'completed' as const } : a,
+        ),
+      );
     }
+    setCallState('ended');
+    setSharing(false);
+    setCompletedToday((n) => n + 1);
+    setToast('Consult completed');
+    setBusy(false);
   };
 
   const onIssueScript = async () => {
     if (!selected || !session) return;
     if (!drugName.trim() || !dosage.trim() || !duration.trim()) {
-      setToast('Drug name, dosage, and duration are required');
+      setToast('Medication, dosage, and duration are required');
       return;
     }
     setBusy(true);
@@ -159,45 +206,92 @@ export default function App() {
       await issuePrescription({
         patient_id: selected.ihs_uid,
         ihs_uid: selected.ihs_uid,
-        physician: session.name || 'Dr. Ananya Rao',
+        physician: session.name || DOCTOR_PROFILE.name,
         appointment_id: selected.id,
         title: `E-Prescription — ${drugName.trim()}`,
         drug_name: drugName.trim(),
         dosage_instructions: dosage.trim(),
         duration: duration.trim(),
-        refills: Number(refills) || 0,
-        instructions: `${dosage.trim()} · ${duration.trim()} · Refills: ${Number(refills) || 0}`,
+        refills: 0,
+        instructions: `${dosage.trim()} · ${duration.trim()} · ${advice.trim()}`,
         medicines: [
           {
             name: drugName.trim(),
             dose: dosage.trim(),
             duration: duration.trim(),
-            quantity: 15,
-            refills: Number(refills) || 0,
+            quantity: 10,
+            refills: 0,
           },
         ],
       });
-      setToast(`E-prescription synced → ${selected.patient_name} Health Vault`);
-      const refreshed = await fetchPatientVault(selected.ihs_uid);
-      setVault(refreshed);
-      setCallState('ended');
-      setAppointments((prev) =>
-        prev.map((a) => (a.id === selected.id ? { ...a, status: 'completed' as const } : a)),
-      );
-    } catch (err) {
-      setToast(err instanceof Error ? err.message : 'Rx issue failed');
-    } finally {
-      setBusy(false);
+    } catch {
+      /* local vault append */
     }
+    setVault((prev) => {
+      const base = prev || DEMO_VAULT;
+      return {
+        ...base,
+        records: [
+          {
+            id: `rx-${Date.now()}`,
+            ihs_uid: selected.ihs_uid,
+            title: `E-Prescription — ${drugName.trim()}`,
+            category: 'Pharmacy',
+            date_label: 'Today',
+            worm_locked: true,
+            summary: `${dosage} · ${duration} · ${advice.slice(0, 48)}…`,
+            prescribed_by: session.name,
+            medicines: [
+              {
+                name: drugName.trim(),
+                dose: dosage.trim(),
+                duration: duration.trim(),
+                quantity: 10,
+              },
+            ],
+          },
+          ...base.records,
+        ],
+      };
+    });
+    setToast(`⚡ E-Prescription synced → ${selected.patient_name} Vault`);
+    setBusy(false);
+  };
+
+  const requestDoorstep = async () => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      await fetch(`${API_BASE}/v1/dispatch/home-visit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ihs_uid: selected.ihs_uid,
+          patient_name: selected.patient_name,
+          reason: selected.chief_complaint || selected.notes,
+          requested_by: session?.name || DOCTOR_PROFILE.name,
+        }),
+      });
+    } catch {
+      /* offline */
+    }
+    setToast('Doorstep GP visit routed to Dispatch Command (App #2)');
+    setBusy(false);
+  };
+
+  const orderLab = () => {
+    setToast('Home lab sample collection ordered · phlebotomy queue notified');
   };
 
   if (!session) {
     return (
       <div className="login-shell">
-        <form className="login-card" onSubmit={onLogin}>
+        <form className="login-card squircle" onSubmit={onLogin}>
           <p className="login-brand">IHS CLINICAL</p>
-          <h1>Doctor Console</h1>
-          <p>Secure clinician access for teleconsult queue, Health Vault, and e-prescription studio.</p>
+          <h1 className="serif">Doctor Studio</h1>
+          <p>
+            Editorial teleconsult workspace · vault e-prescription · Ananthapur 50km grid.
+          </p>
           {loginError && <div className="error-banner">{loginError}</div>}
           <div className="field">
             <label htmlFor="uid">Doctor UID</label>
@@ -221,222 +315,387 @@ export default function App() {
               autoComplete="current-password"
             />
           </div>
-          <button className="btn btn-primary" type="submit" disabled={loggingIn}>
-            {loggingIn ? 'Authenticating…' : 'Enter Clinical Console'}
+          <button className="btn btn-primary ios-press" type="submit" disabled={loggingIn}>
+            {loggingIn ? 'Authenticating…' : 'Enter Doctor Studio'}
           </button>
-          <p className="login-hint">Demo · DOC-101 / 123456 · Dr. Ananya Rao</p>
+          <p className="login-hint">Demo · DOC-101 / 123456 · {DOCTOR_PROFILE.name}</p>
         </form>
       </div>
     );
   }
 
+  const patientHeader = selected
+    ? `${selected.patient_name} · ${selected.ihs_uid} · Age ${selected.age ?? 58} · ${
+        selected.sector || 'Ananthapur Urban'
+      }`
+    : 'No patient selected';
+  const complaint =
+    selected?.chief_complaint || selected?.notes || 'Acute fever & follow-up review';
+  const inCall = callState === 'live' || callState === 'muted' || callState === 'camera_off';
+
   return (
     <div className="app">
-      <header className="topbar">
-        <div className="brand-block">
-          <div className="brand-mark">IHS DOC</div>
+      {toast && <div className="toast">{toast}</div>}
+
+      {/* A. Clinical Header */}
+      <header className="topbar squircle">
+        <div className="identity">
+          <div className="logo-mark" aria-hidden>
+            IHS
+          </div>
           <div>
-            <h1>Doctor & Clinician Console</h1>
-            <span>
-              {session.name} · {session.uid}
-            </span>
+            <div className="serif brand-title">Doctor Studio</div>
+            <strong>
+              {session.name} · {session.credentials || DOCTOR_PROFILE.credentials} ·{' '}
+              {DOCTOR_PROFILE.role}
+            </strong>
           </div>
         </div>
-        <div className="top-meta">
-          <span className={`pill ${connectionState === 'live' ? 'live' : 'offline'}`}>
-            WS {connectionState.toUpperCase()} · :8080
-          </span>
-          <span className="pill">{appointments.filter((a) => a.status === 'queued').length} QUEUED</span>
-          <button className="btn btn-ghost" type="button" onClick={() => setSession(null)}>
+
+        <div className="kpi-row">
+          <div className="kpi-badge">
+            <span>Live Teleconsult Queue</span>
+            <strong>{waiting} Waiting</strong>
+          </div>
+          <div className="kpi-badge mint">
+            <span>Completed Today</span>
+            <strong>{completedToday} Consults</strong>
+          </div>
+          <div className="kpi-badge live">
+            <span className="pulse-dot" />
+            ACTIVE ON CALL · ANANTHAPUR 50KM
+          </div>
+        </div>
+
+        <div className="header-actions">
+          <button
+            type="button"
+            className={`duty-pill ios-press ${onDuty ? 'on' : 'off'}`}
+            onClick={() => setOnDuty((v) => !v)}
+          >
+            {onDuty ? '🟢 AVAILABLE FOR CALLS' : '⚪ OFF DUTY'}
+          </button>
+          <div className="vault-pill">🔒 SHA-256 VAULT SYNC</div>
+          <button
+            type="button"
+            className="btn btn-ghost ios-press"
+            onClick={() => setSession(null)}
+          >
             Sign out
           </button>
         </div>
       </header>
 
-      <div className="workspace workspace-queue-only">
-        <aside className="panel panel-full">
-          <div className="panel-head">
-            <h2>Consultation Queue</h2>
-            <p>Click a patient to open Consultation & E-Prescription drawer</p>
-          </div>
-          <div className="queue-list">
-            {appointments.length === 0 && (
-              <div className="empty">No appointments in queue. Waiting for App #1 bookings…</div>
-            )}
-            {appointments.map((apt) => (
+      <div className="studio-layout">
+        {/* C. Left Drawer — History & Vitals */}
+        <aside className="panel left-panel squircle mint-surface">
+          <h2 className="serif section-h">Patient History & Vitals</h2>
+          <p className="muted">Vault-synced from App #1</p>
+
+          {vaultLoading && <div className="empty">Syncing vault…</div>}
+
+          {vault && (
+            <>
+              {!!vault.allergies?.length && (
+                <div className="allergy-badge">
+                  ⚠ Known Allergies: {vault.allergies.join(', ')}
+                </div>
+              )}
+
+              <div className="vital-grid">
+                {vault.vitals.map((v) => (
+                  <div key={v.id} className="vital-tile squircle">
+                    <span>{v.label}</span>
+                    <strong>
+                      {v.value}
+                      <em>{v.unit}</em>
+                    </strong>
+                  </div>
+                ))}
+              </div>
+
+              <h3 className="subhead">Historical Consultations</h3>
+              <div className="history-list">
+                {vault.records.map((r) => (
+                  <article key={r.id} className="history-item squircle">
+                    <div className="hist-top">
+                      <strong>{r.title}</strong>
+                      <span>{r.date_label}</span>
+                    </div>
+                    <p>{r.summary}</p>
+                    <em>
+                      {r.prescribed_by || 'Clinician'} · {r.category}
+                      {r.worm_locked ? ' · 🔒 WORM' : ''}
+                    </em>
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+
+          <h3 className="subhead">Queue</h3>
+          <div className="mini-queue">
+            {queue.map((apt) => (
               <button
                 key={apt.id}
                 type="button"
-                className={`queue-item ${selected?.id === apt.id && drawerOpen ? 'active' : ''}`}
-                onClick={() => openPatientDrawer(apt)}
+                className={`queue-chip ios-press ${selected?.id === apt.id ? 'active' : ''}`}
+                onClick={() => {
+                  setSelectedId(apt.id);
+                  setCallState(apt.status === 'in_consult' ? 'live' : 'idle');
+                }}
               >
-                <div className="name">{apt.patient_name}</div>
-                <div className="uid">{apt.ihs_uid}</div>
-                <div className="meta">
-                  <span className={typeChip(apt.type)}>{typeLabel(apt.type)}</span>
-                  <span className={capChip(apt.capitation_status)}>{apt.capitation_status}</span>
-                  <span className="chip">{apt.status.replace('_', ' ').toUpperCase()}</span>
-                </div>
-                <div className="when">{apt.when_label}</div>
-                {apt.notes && <div className="when">{apt.notes}</div>}
+                <strong>{apt.patient_name}</strong>
+                <span>
+                  {apt.ihs_uid} · {apt.status.replace('_', ' ')}
+                </span>
               </button>
             ))}
           </div>
         </aside>
-      </div>
 
-      {drawerOpen && selected && (
-        <div className="drawer-root" role="dialog" aria-modal="true" aria-label="Consultation drawer">
-          <button type="button" className="drawer-backdrop" aria-label="Close drawer" onClick={closeDrawer} />
-          <aside className="drawer-panel">
-            <div className="drawer-head">
-              <div>
-                <p className="drawer-kicker">Consultation & E-Prescription</p>
-                <h2>
-                  {selected.patient_name}
-                  <span className="drawer-uid"> · {selected.ihs_uid}</span>
-                </h2>
-                <p className="drawer-sub">
-                  {typeLabel(selected.type)} · {selected.when_label} · {selected.capitation_status}
-                </p>
+        {/* B. Center — Teleconsult Studio */}
+        <section className="panel center-panel squircle">
+          <div className="card-head">
+            <h2 className="serif section-h">Active Teleconsultation</h2>
+            <span className={`conn-pill ${connectionState}`}>{connectionState.toUpperCase()}</span>
+          </div>
+
+          <div className="patient-banner squircle">
+            <div>
+              <span className="eyebrow">Active Patient</span>
+              <h3 className="serif">{patientHeader}</h3>
+              <p>
+                Chief Complaint: <strong>{complaint}</strong>
+              </p>
+            </div>
+          </div>
+
+          <div
+            className={`video-stage squircle ${inCall ? 'live' : ''} ${
+              !cameraOn ? 'cam-off' : ''
+            }`}
+          >
+            <div className="video-overlay">
+              <div className="video-avatar" aria-hidden>
+                {(selected?.patient_name || 'P')
+                  .split(' ')
+                  .map((p) => p[0])
+                  .join('')
+                  .slice(0, 2)}
               </div>
-              <button type="button" className="btn btn-ghost" onClick={closeDrawer}>
-                Close
+              <strong>
+                {callState === 'idle' && 'Ready to connect'}
+                {callState === 'live' && `● LIVE · ${selected?.patient_name}`}
+                {callState === 'muted' && 'Mic muted · video active'}
+                {callState === 'camera_off' && 'Camera off · audio active'}
+                {callState === 'ended' && 'Consult ended'}
+              </strong>
+              <span>
+                Simulated A/V · {session.name}
+                {sharing ? ' · Screen sharing' : ''}
+              </span>
+            </div>
+
+            <div className="video-controls">
+              {!inCall && callState !== 'ended' && (
+                <button
+                  type="button"
+                  className="ctrl primary ios-press"
+                  disabled={busy || !onDuty}
+                  onClick={() => void onStartVideo()}
+                >
+                  Start Consult
+                </button>
+              )}
+              <button
+                type="button"
+                className={`ctrl ios-press ${callState === 'muted' ? 'active' : ''}`}
+                disabled={!inCall}
+                onClick={() =>
+                  setCallState((s) => (s === 'muted' ? 'live' : s === 'live' || s === 'camera_off' ? 'muted' : s))
+                }
+              >
+                {callState === 'muted' ? 'Unmute' : 'Mute'}
+              </button>
+              <button
+                type="button"
+                className={`ctrl ios-press ${!cameraOn ? 'active' : ''}`}
+                disabled={!inCall}
+                onClick={() => {
+                  setCameraOn((v) => !v);
+                  setCallState((s) =>
+                    s === 'live' || s === 'muted' || s === 'camera_off'
+                      ? cameraOn
+                        ? 'camera_off'
+                        : 'live'
+                      : s,
+                  );
+                }}
+              >
+                Camera
+              </button>
+              <button
+                type="button"
+                className={`ctrl ios-press ${sharing ? 'active' : ''}`}
+                disabled={!inCall}
+                onClick={() => {
+                  setSharing((v) => !v);
+                  setToast(sharing ? 'Screen share stopped' : 'Screen share started');
+                }}
+              >
+                Share
+              </button>
+              <button
+                type="button"
+                className="ctrl danger ios-press"
+                disabled={!inCall || busy}
+                onClick={() => void onEndConsult()}
+              >
+                End Consult
               </button>
             </div>
+          </div>
 
-            <div className="drawer-body">
-              <section className="rx-card">
-                <h3>Live Teleconsult</h3>
-                <div className={`video-stage compact ${callState === 'live' || callState === 'muted' ? 'live' : ''}`}>
-                  <div className="video-copy">
-                    <strong>
-                      {callState === 'idle' && 'Ready to connect'}
-                      {callState === 'live' && `Connected · ${selected.patient_name}`}
-                      {callState === 'muted' && 'Mic muted · video active'}
-                      {callState === 'ended' && 'Consult ended'}
-                    </strong>
-                    <span>Simulated A/V · physician {session.name}</span>
-                  </div>
-                </div>
-                <div className="call-controls">
-                  <button
-                    className="btn btn-ok"
-                    type="button"
-                    disabled={busy || callState === 'live' || callState === 'muted'}
-                    onClick={onStartVideo}
-                  >
-                    Start Video Call
-                  </button>
-                  <button
-                    className="btn btn-ghost"
-                    type="button"
-                    disabled={busy || (callState !== 'live' && callState !== 'muted')}
-                    onClick={onMute}
-                  >
-                    {callState === 'muted' ? 'Unmute' : 'Mute'}
-                  </button>
-                  <button
-                    className="btn btn-danger"
-                    type="button"
-                    disabled={busy || callState === 'idle' || callState === 'ended'}
-                    onClick={onEndConsult}
-                  >
-                    End Consult
-                  </button>
-                </div>
-              </section>
-
-              <section className="rx-card">
-                <h3>E-Prescription Studio</h3>
-                <div className="field">
-                  <label htmlFor="drug">Drug Name</label>
-                  <input
-                    id="drug"
-                    value={drugName}
-                    onChange={(e) => setDrugName(e.target.value)}
-                    placeholder="Amoxicillin 500mg"
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="dose">Dosage Instructions</label>
-                  <input
-                    id="dose"
-                    value={dosage}
-                    onChange={(e) => setDosage(e.target.value)}
-                    placeholder="1 tab 3x daily after meals"
-                  />
-                </div>
-                <div className="rx-row">
-                  <div className="field">
-                    <label htmlFor="duration">Duration</label>
-                    <input
-                      id="duration"
-                      value={duration}
-                      onChange={(e) => setDuration(e.target.value)}
-                      placeholder="5 days"
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="refills">Refills</label>
-                    <input
-                      id="refills"
-                      type="number"
-                      min={0}
-                      max={12}
-                      value={refills}
-                      onChange={(e) => setRefills(Number(e.target.value))}
-                    />
-                  </div>
-                </div>
-                <button
-                  className="btn btn-primary btn-issue"
-                  type="button"
-                  disabled={busy}
-                  onClick={onIssueScript}
-                >
-                  {busy ? 'Issuing…' : 'ISSUE E-PRESCRIPTION'}
-                </button>
-              </section>
-
-              <section className="rx-card">
-                <h3>Patient Health Vault snapshot</h3>
-                {vaultLoading && <div className="empty">Loading vault…</div>}
-                {vault && (
-                  <>
-                    <div className="vital-grid drawer-vitals">
-                      {vault.vitals.map((v) => (
-                        <div key={v.id} className="vital">
-                          <div className="label">{v.label}</div>
-                          <div className="value">
-                            {v.value}
-                            <span style={{ fontSize: 12, marginLeft: 6 }}>{v.unit}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="drawer-rx-list">
-                      {vault.records
-                        .filter((r) => r.category === 'Pharmacy')
-                        .slice(0, 4)
-                        .map((r) => (
-                          <div key={r.id} className="record">
-                            <div className="title">{r.title}</div>
-                            <div className="summary">
-                              {r.prescribed_by || 'Clinician'} · {r.date_label}
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  </>
-                )}
-              </section>
+          {/* E. Doorstep / Lab router */}
+          <div className="escalate-row">
+            <h3 className="serif section-h sm">Doorstep GP Visit & Follow-Up</h3>
+            <div className="escalate-btns">
+              <button
+                type="button"
+                className="btn btn-outline ios-press"
+                disabled={!selected || busy}
+                onClick={() => void requestDoorstep()}
+              >
+                [ Request Doorstep GP Visit ]
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline ios-press"
+                disabled={!selected || busy}
+                onClick={orderLab}
+              >
+                [ Order Home Lab Sample Collection ]
+              </button>
             </div>
-          </aside>
-        </div>
-      )}
+          </div>
+        </section>
 
-      {toast && <div className="toast">{toast}</div>}
+        {/* D. Right — E-Prescription Builder */}
+        <aside className="panel right-panel squircle">
+          <h2 className="serif section-h">Vault E-Prescription Builder</h2>
+          <p className="muted">Stock-aware pharmacy sync</p>
+
+          <div className="field med-search">
+            <label htmlFor="drug">Medication Search</label>
+            <input
+              id="drug"
+              value={drugQuery}
+              onChange={(e) => {
+                setDrugQuery(e.target.value);
+                setDrugName(e.target.value);
+                setShowSuggestions(true);
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => window.setTimeout(() => setShowSuggestions(false), 180)}
+              placeholder="Paracetamol 650mg"
+              autoComplete="off"
+            />
+            {showSuggestions && suggestions.length > 0 && (
+              <ul className="suggest-list squircle">
+                {suggestions.map((m) => (
+                  <li key={m.id}>
+                    <button
+                      type="button"
+                      className="ios-press"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setDrugQuery(m.name);
+                        setDrugName(m.name);
+                        setShowSuggestions(false);
+                      }}
+                    >
+                      <strong>{m.name}</strong>
+                      <span className={`stock ${m.stock}`}>
+                        {m.stock === 'in_stock' && 'In stock'}
+                        {m.stock === 'low' && 'Low stock'}
+                        {m.stock === 'out' && 'Out'}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="field">
+            <label htmlFor="dose">Dosage & Frequency</label>
+            <select
+              id="dose"
+              value={dosage}
+              onChange={(e) => setDosage(e.target.value)}
+            >
+              {DOSAGE_OPTIONS.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="field">
+            <label htmlFor="duration">Duration</label>
+            <select
+              id="duration"
+              value={duration}
+              onChange={(e) => setDuration(e.target.value)}
+            >
+              {DURATION_OPTIONS.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="field">
+            <label htmlFor="advice">Special Advice Note</label>
+            <textarea
+              id="advice"
+              rows={3}
+              value={advice}
+              onChange={(e) => setAdvice(e.target.value)}
+            />
+          </div>
+
+          <div className="rx-preview squircle">
+            <span className="eyebrow">Preview</span>
+            <strong>{drugName || '—'}</strong>
+            <p>
+              {dosage} · {duration}
+            </p>
+            <p className="advice-prev">{advice}</p>
+          </div>
+
+          <button
+            type="button"
+            className="btn btn-primary btn-issue ios-press"
+            disabled={busy || !selected}
+            onClick={() => void onIssueScript()}
+          >
+            {busy ? 'Syncing…' : '⚡ Sign & Sync E-Prescription to Patient Vault'}
+          </button>
+
+          <button
+            type="button"
+            className="btn btn-ghost ios-press complete-btn"
+            disabled={busy || !inCall}
+            onClick={() => void onEndConsult()}
+          >
+            Complete Consult
+          </button>
+        </aside>
+      </div>
     </div>
   );
 }

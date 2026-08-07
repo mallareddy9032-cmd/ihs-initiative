@@ -1,68 +1,62 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useHospitalSocket } from './hooks/useHospitalSocket';
 import {
-  ER_DOCTORS,
+  CLINICAL_ORDERS,
+  DEMO_INCOMING,
+  DEMO_VAULT,
+  FACILITY,
   INITIAL_BAYS,
+  type ClinicalOrder,
   type IncomingTransport,
   type TraumaBay,
 } from './types';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
-function Phase3SchemeBadge() {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <button type="button" className="phase3-banner" onClick={() => setOpen(true)}>
-        <div className="phase3-title">Aarogyasri / PM-JAY Auto-Eligibility Check</div>
-        <span className="phase3-tag">[UPCOMING FEATURE - PHASE 3]</span>
-        <div className="phase3-hint">Patient intake · government scheme verification roadmap</div>
-      </button>
-      {open && (
-        <div className="phase3-modal-root" role="dialog" aria-modal="true">
-          <button type="button" className="phase3-backdrop" aria-label="Close" onClick={() => setOpen(false)} />
-          <div className="phase3-modal">
-            <p className="phase3-kicker">PHASE 3 ROADMAP</p>
-            <h3>Aarogyasri / PM-JAY Auto-Eligibility</h3>
-            <p>
-              Upcoming automated verification will check Aarogyasri and Ayushman Bharat PM-JAY
-              eligibility at ER intake against the patient IHS UID / ABHA linkage, then surface
-              cover status before bay assignment and billing handoff.
-            </p>
-            <button type="button" className="btn btn-primary" onClick={() => setOpen(false)}>
-              Got it
-            </button>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
-function formatEta(deadlineMs?: number, fallbackMin?: number): string {
+function formatEtaCountdown(deadlineMs?: number, fallbackMin?: number): string {
   if (!deadlineMs) {
-    return fallbackMin != null ? `Arriving in ${fallbackMin} mins` : 'ETA pending';
+    if (fallbackMin == null) return '--:--';
+    const m = Math.floor(fallbackMin);
+    const s = Math.round((fallbackMin - m) * 60);
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
   const remain = Math.max(0, Math.ceil((deadlineMs - Date.now()) / 1000));
   const m = Math.floor(remain / 60);
   const s = remain % 60;
-  if (remain <= 0) return 'ARRIVING NOW';
-  if (m <= 0) return `Arriving in ${s}s`;
-  return `Arriving in ${m} min ${s.toString().padStart(2, '0')}s`;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-function triageLabel(p: IncomingTransport['triage_priority']): string {
-  if (p === 'RED') return 'RED · CRITICAL';
-  if (p === 'YELLOW') return 'YELLOW · URGENT';
-  return 'GREEN · STABLE';
+function hrTone(hr: number): string {
+  if (hr >= 110 || hr <= 50) return 'alert-red';
+  if (hr >= 100) return 'alert-amber';
+  return '';
+}
+
+function spo2Tone(spo2: number): string {
+  if (spo2 < 90) return 'alert-red';
+  if (spo2 < 95) return 'alert-amber';
+  return '';
+}
+
+function EcgWave() {
+  return (
+    <svg className="ecg-wave" viewBox="0 0 320 48" preserveAspectRatio="none" aria-hidden>
+      <path
+        d="M0 24 H40 L48 24 L56 8 L64 40 L72 18 L80 24 H120 L128 24 L136 6 L144 42 L152 16 L160 24 H200 L208 24 L216 10 L224 38 L232 20 L240 24 H280 L288 24 L296 8 L304 40 L312 18 L320 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 export default function App() {
-  const { connectionState, incoming, removeCase, toast, setToast, error } = useHospitalSocket();
+  const { connectionState, incoming, setIncoming, removeCase, toast, setToast, error } =
+    useHospitalSocket();
   const [bays, setBays] = useState<TraumaBay[]>(INITIAL_BAYS);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [doctor, setDoctor] = useState(ER_DOCTORS[0]);
-  const [bayChoice, setBayChoice] = useState('BAY-2');
+  const [orders, setOrders] = useState<ClinicalOrder[]>(CLINICAL_ORDERS);
   const [busy, setBusy] = useState(false);
   const [, setTick] = useState(0);
 
@@ -71,102 +65,39 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
-  const selected = useMemo(
-    () => incoming.find((x) => x.case_id === selectedId) || incoming[0] || null,
-    [incoming, selectedId],
-  );
+  const active = useMemo<IncomingTransport | null>(() => {
+    if (incoming.length > 0) return incoming[0];
+    return null;
+  }, [incoming]);
 
-  useEffect(() => {
-    if (selected) {
-      setSelectedId(selected.case_id);
-      if (selected.reserved_bay) setBayChoice(selected.reserved_bay);
-      if (selected.assigned_er_doctor) setDoctor(selected.assigned_er_doctor);
-    }
-  }, [selected?.case_id]);
+  const availableCount = bays.filter((b) => b.state === 'AVAILABLE').length;
+  const enRouteCount = Math.max(incoming.length, active ? 1 : 0);
+  const avgTriage = '02:15';
 
-  const availableBays = bays.filter((b) => b.state === 'AVAILABLE' || b.caseId === selected?.case_id);
-  const occupiedPct = Math.round(
-    (bays.filter((b) => b.state !== 'AVAILABLE').length / Math.max(bays.length, 1)) * 100,
-  );
-  const satTone = occupiedPct >= 90 ? 'red' : occupiedPct >= 70 ? 'amber' : '';
-
-  const reserveBay = async () => {
-    if (!selected) return;
-    setBusy(true);
-    try {
-      const res = await fetch(`${API_BASE}/v1/hospital/reserve-bay`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          case_id: selected.case_id,
-          bay_id: bayChoice,
-          er_doctor: doctor,
-        }),
-      });
-      const body = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(body.error || 'Reserve failed');
-
-      setBays((prev) =>
-        prev.map((b) => {
-          if (b.caseId === selected.case_id && b.id !== bayChoice) {
-            return { ...b, state: 'AVAILABLE' as const, caseId: undefined, patientName: undefined, doctor: undefined };
-          }
-          if (b.id === bayChoice) {
-            return {
+  const syncDemo = () => {
+    setIncoming([
+      {
+        ...DEMO_INCOMING,
+        timestamp: new Date().toISOString(),
+        eta_deadline_ms: Date.now() + 3 * 60_000 + 40_000,
+      },
+    ]);
+    setBays((prev) =>
+      prev.map((b) =>
+        b.id === 'T-03'
+          ? {
               ...b,
-              state: 'RESERVED' as const,
-              caseId: selected.case_id,
-              patientName: selected.patient_name,
-              doctor,
-            };
-          }
-          return b;
-        }),
-      );
-      setToast(`Reserved ${bayChoice} · ${doctor}`);
-    } catch (err) {
-      setToast(err instanceof Error ? err.message : 'Reserve failed');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const confirmIntake = async () => {
-    if (!selected) return;
-    setBusy(true);
-    try {
-      const res = await fetch(`${API_BASE}/v1/hospital/er-intake`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          case_id: selected.case_id,
-          bay_id: bayChoice,
-          er_doctor: doctor,
-        }),
-      });
-      const body = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(body.error || 'Intake failed');
-
-      setBays((prev) =>
-        prev.map((b) =>
-          b.id === bayChoice
-            ? {
-                ...b,
-                state: 'OCCUPIED' as const,
-                caseId: selected.case_id,
-                patientName: selected.patient_name,
-                doctor,
-              }
-            : b,
-        ),
-      );
-      removeCase(selected.case_id);
-      setToast('ER intake confirmed — loop closed to Apps 1–3');
-    } catch (err) {
-      setToast(err instanceof Error ? err.message : 'Intake failed');
-    } finally {
-      setBusy(false);
-    }
+              state: 'RESERVED',
+              caseId: DEMO_INCOMING.case_id,
+              patientName: DEMO_INCOMING.patient_name,
+              doctor: FACILITY.dutyOfficer,
+              team: 'Cardiac Care Unit',
+            }
+          : b,
+      ),
+    );
+    setOrders(CLINICAL_ORDERS.map((o) => ({ ...o, sent: false })));
+    setToast('Demo pre-arrival stream loaded · Unit AP-02-EX-2214');
   };
 
   const simulateIncoming = async () => {
@@ -175,203 +106,394 @@ export default function App() {
       const res = await fetch(`${API_BASE}/v1/demo/incoming-er`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ihs_uid: 'IHS-ADMIN-00001', fleet_id: 'AMB-VSKP-07' }),
+        body: JSON.stringify({
+          ihs_uid: 'IHS-8802',
+          fleet_id: 'ALS-02',
+          patient_name: 'Lakshmi R.',
+        }),
       });
       const body = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(body.error || 'Demo failed');
       setToast('Demo inbound transport pushed');
-    } catch (err) {
-      setToast(err instanceof Error ? err.message : 'Demo failed');
+    } catch {
+      syncDemo();
     } finally {
       setBusy(false);
     }
   };
 
+  const reserveBay = async (bayId: string) => {
+    if (!active) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`${API_BASE}/v1/hospital/reserve-bay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          case_id: active.case_id,
+          bay_id: bayId,
+          er_doctor: FACILITY.dutyOfficer,
+        }),
+      });
+      if (!res.ok) {
+        const body = (await res.json()) as { error?: string };
+        throw new Error(body.error || 'Reserve failed');
+      }
+    } catch {
+      /* offline / local reserve */
+    }
+
+    setBays((prev) =>
+      prev.map((b) => {
+        if (b.caseId === active.case_id && b.id !== bayId) {
+          return {
+            ...b,
+            state: 'AVAILABLE',
+            caseId: undefined,
+            patientName: undefined,
+            doctor: undefined,
+            team: undefined,
+          };
+        }
+        if (b.id === bayId) {
+          return {
+            ...b,
+            state: 'RESERVED',
+            caseId: active.case_id,
+            patientName: active.patient_name,
+            doctor: FACILITY.dutyOfficer,
+            team: active.assigned_team || 'Cardiac Care Unit',
+          };
+        }
+        return b;
+      }),
+    );
+    setIncoming((prev) =>
+      prev.map((item) =>
+        item.case_id === active.case_id
+          ? { ...item, reserved_bay: bayId, assigned_er_doctor: FACILITY.dutyOfficer }
+          : item,
+      ),
+    );
+    setToast(`Reserved ${bayId} for Unit ${active.vehicle_reg || 'AP-02-EX-2214'}`);
+    setBusy(false);
+  };
+
+  const confirmIntake = async () => {
+    if (!active) return;
+    const bayId = active.reserved_bay || bays.find((b) => b.caseId === active.case_id)?.id || 'T-03';
+    setBusy(true);
+    try {
+      await fetch(`${API_BASE}/v1/hospital/er-intake`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          case_id: active.case_id,
+          bay_id: bayId,
+          er_doctor: FACILITY.dutyOfficer,
+        }),
+      });
+    } catch {
+      /* local intake */
+    }
+    setBays((prev) =>
+      prev.map((b) =>
+        b.id === bayId
+          ? {
+              ...b,
+              state: 'OCCUPIED',
+              caseId: active.case_id,
+              patientName: active.patient_name,
+              doctor: FACILITY.dutyOfficer,
+            }
+          : b,
+      ),
+    );
+    removeCase(active.case_id);
+    setToast('ER intake confirmed — trauma bay occupied');
+    setBusy(false);
+  };
+
+  const sendOrder = (orderId: string) => {
+    if (!active) return;
+    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, sent: true } : o)));
+    const label = orders.find((o) => o.id === orderId)?.label || orderId;
+    setToast(`Directive sent to ${active.driver_name || 'crew'}: ${label}`);
+  };
+
+  const unitLabel = active
+    ? `${active.vehicle_reg || 'AP-02-EX-2214'} ${active.vehicle_type || 'Force Traveller ALS'}`
+    : '—';
+  const etaLabel = active ? formatEtaCountdown(active.eta_deadline_ms, active.eta_minutes) : '--:--';
+  const wsLive = connectionState === 'open';
+
   return (
     <div className="app">
       {toast && <div className="toast">{toast}</div>}
 
+      {/* A. Granola-Style ER Header */}
       <header className="topbar">
-        <div className="brand-block">
-          <div className="brand">IHS ER</div>
-          <div>
-            <h1>Trauma Bay Receiving · Command Triage</h1>
-            <p>KGH Visakhapatnam · live ambulance intake</p>
+        <div className="identity">
+          <div className="serif brand-title">Hospital ER Triage</div>
+          <strong>
+            {FACILITY.name} · {FACILITY.dept}
+          </strong>
+        </div>
+
+        <div className="kpi-row">
+          <div className="kpi-badge mint">
+            <span>Active Trauma Beds</span>
+            <strong className="mono">
+              {availableCount} Available / {bays.length} Total
+            </strong>
+          </div>
+          <div className="kpi-badge cyan">
+            <span>Incoming Ambulances</span>
+            <strong className="mono">{enRouteCount} En Route</strong>
+          </div>
+          <div className="kpi-badge">
+            <span>Avg Triage Time</span>
+            <strong className="mono">{avgTriage}m</strong>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <div className={`pill ${connectionState}`}>{connectionState.toUpperCase()}</div>
-          <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void simulateIncoming()}>
-            Simulate inbound
-          </button>
+
+        <div className="header-actions">
+          <div className="officer">
+            <div className="avatar" aria-hidden>
+              MA
+            </div>
+            <div>
+              <strong>{FACILITY.dutyOfficer}</strong>
+              <span>{FACILITY.dutyRole}</span>
+            </div>
+          </div>
+          <div className={`sync-pill ${wsLive ? 'live' : 'offline'}`}>
+            <span className="pulse-dot" />
+            {wsLive ? 'WEBSOCKET SYNC ACTIVE' : `SYNC ${connectionState.toUpperCase()}`}
+          </div>
         </div>
       </header>
 
-      {error && (
-        <div style={{ background: '#7f1d1d', padding: '8px 20px', fontSize: 13 }}>{error}</div>
+      {error && !wsLive && (
+        <div className="err-banner">
+          {error} · Demo mode available offline
+        </div>
       )}
 
       <main className="layout">
-        <section className="panel">
-          <div className="panel-head">
-            <h2>Incoming Emergencies</h2>
-            <span className="meta">{incoming.length} active</span>
-          </div>
-          <div className="panel-body">
-            {incoming.length === 0 && (
-              <div className="empty">
-                Awaiting ambulance transports on <code>/v1/hospital/stream</code>.
-                <br />
-                Use Driver App status steps or “Simulate inbound”.
-              </div>
-            )}
-
-            {incoming.map((item) => {
-              const selectedCard = selected?.case_id === item.case_id;
-              return (
-                <article
-                  key={item.case_id}
-                  className={`incoming-card ios-press ios-spring priority-${item.triage_priority} ${
-                    selectedCard ? 'selected' : ''
-                  } ${item.triage_priority === 'RED' ? 'flash-red' : ''}`}
-                  onClick={() => setSelectedId(item.case_id)}
+        <div className="col-primary">
+          {/* B. Incoming Ambulance Pre-Arrival Card */}
+          <section className="card dark-card incoming-card flash-critical">
+            <div className="card-head">
+              <h2 className="serif">Incoming Trauma Telemetry</h2>
+              {!active && (
+                <button
+                  type="button"
+                  className="btn btn-amber ios-press"
+                  disabled={busy}
+                  onClick={() => void simulateIncoming()}
                 >
-                  <div className="row">
-                    <div>
-                      <h3 className="name">{item.patient_name}</h3>
-                      <div className="meta">
-                        {item.ihs_uid} · Age {item.patient_age} · {item.fleet_id || 'UNIT'}
-                      </div>
-                    </div>
-                    <span className={`badge ${item.triage_priority}`}>
-                      {triageLabel(item.triage_priority)}
+                  Load Demo Pre-Arrival
+                </button>
+              )}
+            </div>
+
+            {!active ? (
+              <div className="empty">
+                Awaiting paramedic HUD stream from App #3.
+                <br />
+                Unit telemetry appears when an ALS transport is en route to GGH.
+              </div>
+            ) : (
+              <>
+                <div className="incoming-grid">
+                  <div className="unit-block">
+                    <span className="eyebrow">Incoming Unit</span>
+                    <strong>{unitLabel}</strong>
+                    <em>Driver: {active.driver_name || 'Suresh Naidu'}</em>
+                    <span className="status-chip cyan">
+                      ● {active.driver_status.replace(/_/g, ' ')}
                     </span>
                   </div>
-
-                  <div className="row">
-                    <div className="eta">{formatEta(item.eta_deadline_ms, item.eta_minutes)}</div>
-                    <div className="meta" style={{ textAlign: 'right' }}>
-                      {item.driver_status.replace(/_/g, ' ')}
-                      <br />
-                      {item.chief_complaint}
+                  <div className="eta-block">
+                    <span className="eyebrow">Target Arrival</span>
+                    <div className={`eta-value mono ${etaLabel === '00:00' ? 'critical' : ''}`}>
+                      {etaLabel}
                     </div>
+                    <span className="eta-sub">ETA Mins</span>
                   </div>
-
-                  <div className="vitals">
-                    <div className="vital">
-                      <label>HR</label>
-                      <strong>{item.vitals.hr}</strong>
-                    </div>
-                    <div className="vital">
-                      <label>SpO₂</label>
-                      <strong>{item.vitals.spo2}%</strong>
-                    </div>
-                    <div className="vital">
-                      <label>BP</label>
-                      <strong>
-                        {item.vitals.bp_sys}/{item.vitals.bp_dia}
-                      </strong>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="panel">
-          <div className="panel-head">
-            <h2>Trauma Bays / ER Beds</h2>
-            <span className="meta">
-              {bays.filter((b) => b.state === 'AVAILABLE').length} free
-            </span>
-          </div>
-          <div className="panel-body">
-            <div className="sat-row">
-              <span>Trauma bay saturation</span>
-              <strong>{occupiedPct}%</strong>
-            </div>
-            <div className="ios-pill-meter" aria-label={`Bay saturation ${occupiedPct}%`}>
-              <div className={`fill ${satTone}`} style={{ width: `${occupiedPct}%` }} />
-            </div>
-            <div className="bay-grid">
-              {bays.map((bay) => (
-                <div key={bay.id} className={`bay ios-press ios-spring ${bay.state}`}>
-                  <div className="row">
-                    <h3>{bay.label}</h3>
-                    <span className={`state ${bay.state}`}>{bay.state}</span>
-                  </div>
-                  <p>
-                    {bay.patientName || 'No patient assigned'}
-                    {bay.doctor ? ` · ${bay.doctor}` : ''}
-                  </p>
-                  {bay.state === 'AVAILABLE' && selected && (
-                    <button
-                      type="button"
-                      className="btn btn-ghost ios-press"
-                      onClick={() => setBayChoice(bay.id)}
-                    >
-                      Reserve {bay.id.replace('BAY-', 'Bay ')}
-                    </button>
-                  )}
                 </div>
+                <div className="patient-strip">
+                  <div>
+                    <span className="eyebrow">Patient Profile</span>
+                    <h3 className="serif">
+                      {active.patient_name} · {active.ihs_uid} · Age {active.patient_age}
+                    </h3>
+                    <p className="complaint">{active.chief_complaint}</p>
+                  </div>
+                  <span className="priority-pill RED">● CRITICAL RESUSCITATION</span>
+                </div>
+              </>
+            )}
+          </section>
+
+          {/* C. Real-Time Streaming Pre-Arrival Vitals Monitor */}
+          <section className="card dark-card vitals-monitor">
+            <div className="card-head">
+              <h2 className="serif">Pre-Arrival Vitals Monitor</h2>
+              <span className="stream-tag cyan">● LIVE TELE-TRIAGE</span>
+            </div>
+            {active ? (
+              <>
+                <div className="vitals-grid">
+                  <div className={`vital-tile ${hrTone(active.vitals.hr)}`}>
+                    <span>Heart Rate</span>
+                    <strong className="mono">{active.vitals.hr}</strong>
+                    <em>BPM</em>
+                  </div>
+                  <div className={`vital-tile ${spo2Tone(active.vitals.spo2)}`}>
+                    <span>SpO₂</span>
+                    <strong className="mono">{active.vitals.spo2}%</strong>
+                    <em>{active.vitals.on_room_air !== false ? 'on Room Air' : 'on O₂'}</em>
+                  </div>
+                  <div className="vital-tile">
+                    <span>Blood Pressure</span>
+                    <strong className="mono">
+                      {active.vitals.bp_sys}/{active.vitals.bp_dia}
+                    </strong>
+                    <em>mmHg</em>
+                  </div>
+                </div>
+                <div className="ecg-panel">
+                  <div className="ecg-meta">
+                    <span>Simulated ECG Waveform Preview</span>
+                    <strong className="mono">Lead II · 25 mm/s</strong>
+                  </div>
+                  <EcgWave />
+                  <p className="care-note">
+                    <span>Care Notes</span>
+                    {active.vitals.note || 'O2 initiated @ 4L/min, IV access secured'}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div className="empty compact">No streaming vitals — load a pre-arrival case.</div>
+            )}
+          </section>
+
+          {/* E. Clinical Directives */}
+          <section className="card mint-card">
+            <div className="card-head">
+              <h2 className="serif">Pre-Arrival Clinical Directives</h2>
+              <span className="muted">Orders → approaching ALS crew</span>
+            </div>
+            <div className="order-grid">
+              {orders.map((order) => (
+                <button
+                  key={order.id}
+                  type="button"
+                  className={`order-btn ios-press ${order.sent ? 'sent' : ''}`}
+                  disabled={!active || order.sent || busy}
+                  onClick={() => sendOrder(order.id)}
+                >
+                  [ {order.label} ]
+                  {order.sent && <em>SENT</em>}
+                </button>
               ))}
             </div>
+          </section>
+        </div>
 
-            <div className="detail">
-              <Phase3SchemeBadge />
-              <div className="field">
-                <label>Selected inbound</label>
-                <div className="meta">
-                  {selected
-                    ? `${selected.patient_name} · ${selected.ihs_uid}`
-                    : 'Select a patient from the queue'}
-                </div>
+        <div className="col-side">
+          {/* D. Trauma Bay Allocation Grid */}
+          <section className="card mint-card">
+            <div className="card-head">
+              <h2 className="serif">Trauma Bay Allocation</h2>
+              <span className="muted">
+                {availableCount} free · T-01–T-06
+              </span>
+            </div>
+            <div className="bay-grid">
+              {bays.map((bay) => {
+                const isAvail = bay.state === 'AVAILABLE';
+                const isOcc = bay.state === 'OCCUPIED';
+                const isRes = bay.state === 'RESERVED';
+                return (
+                  <article
+                    key={bay.id}
+                    className={`bay-card ios-press ${bay.state.toLowerCase()}`}
+                  >
+                    <div className="bay-top">
+                      <h3>{bay.label}</h3>
+                      <span className={`bay-state ${bay.state}`}>
+                        {isAvail && '🟢 Available'}
+                        {isOcc && '🔴 Occupied'}
+                        {isRes && '🔵 Pre-Reserved'}
+                      </span>
+                    </div>
+                    <p>
+                      {isOcc && (bay.patientName || 'Resuscitation in progress')}
+                      {isRes &&
+                        `${bay.patientName || 'Assigned'} · Team: ${bay.team || 'Cardiac Care Unit'}`}
+                      {isAvail && 'Ready for allocation'}
+                    </p>
+                    {isAvail && active && (
+                      <button
+                        type="button"
+                        className="btn btn-primary ios-press"
+                        disabled={busy}
+                        onClick={() => void reserveBay(bay.id)}
+                      >
+                        Reserve for Unit {active.vehicle_reg || 'AP-02-EX-2214'}
+                      </button>
+                    )}
+                    {isRes && bay.caseId === active?.case_id && (
+                      <button
+                        type="button"
+                        className="btn btn-danger ios-press"
+                        disabled={busy}
+                        onClick={() => void confirmIntake()}
+                      >
+                        Confirm ER Intake
+                      </button>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* F. Vault Patient Medical History */}
+          <section className="card vault-card">
+            <div className="card-head">
+              <h2 className="serif">Vault Medical History</h2>
+              <span className="stream-tag">App #1 Sync</span>
+            </div>
+            <div className="vault-grid">
+              <div>
+                <span className="eyebrow">Known Allergies</span>
+                <strong className="alert-red-text">{DEMO_VAULT.allergies.join(', ')}</strong>
               </div>
-
-              <div className="field">
-                <label>Assign bay</label>
-                <select value={bayChoice} onChange={(e) => setBayChoice(e.target.value)}>
-                  {(availableBays.length ? availableBays : bays).map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.label} ({b.state})
-                    </option>
+              <div>
+                <span className="eyebrow">Pre-existing Conditions</span>
+                <strong>{DEMO_VAULT.conditions.join(', ')}</strong>
+              </div>
+              <div className="vault-rx">
+                <span className="eyebrow">Active Prescriptions</span>
+                <ul>
+                  {DEMO_VAULT.prescriptions.map((rx) => (
+                    <li key={rx}>{rx}</li>
                   ))}
-                </select>
-              </div>
-
-              <div className="field">
-                <label>On-duty ER doctor</label>
-                <select value={doctor} onChange={(e) => setDoctor(e.target.value)}>
-                  {ER_DOCTORS.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="actions">
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={!selected || busy}
-                  onClick={() => void reserveBay()}
-                >
-                  Reserve {bayChoice.replace('BAY-', 'Bay ')}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-danger"
-                  disabled={!selected || busy}
-                  onClick={() => void confirmIntake()}
-                >
-                  Confirm ER Intake
-                </button>
+                </ul>
               </div>
             </div>
-          </div>
-        </section>
+            {active && (
+              <p className="vault-patient mono">
+                Synced · {active.patient_name} · {active.ihs_uid}
+              </p>
+            )}
+          </section>
+        </div>
       </main>
     </div>
   );

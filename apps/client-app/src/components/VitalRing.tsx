@@ -7,7 +7,7 @@ import React, { useEffect, useId, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 import { colors } from '../theme/colors';
 
-type RingTone = 'pink' | 'mint';
+type RingTone = 'pink' | 'mint' | 'olive';
 
 interface VitalRingProps {
   label: string;
@@ -21,8 +21,9 @@ interface VitalRingProps {
 }
 
 const TONE = {
-  pink: { stroke: '#FF2D55', soft: 'rgba(255,45,85,0.12)', a: '#FF2D55', b: '#FF6482' },
-  mint: { stroke: '#34C759', soft: 'rgba(52,199,89,0.12)', a: '#34C759', b: '#30D158' },
+  pink: { stroke: '#C53030', soft: 'rgba(197,48,48,0.12)', a: '#C53030', b: '#E53E3E' },
+  mint: { stroke: '#0D5C4D', soft: 'rgba(13,92,77,0.12)', a: '#0D5C4D', b: '#1A7A66' },
+  olive: { stroke: '#2B6CB0', soft: 'rgba(43,108,176,0.12)', a: '#2B6CB0', b: '#4299E1' },
 } as const;
 
 export const VitalRing: React.FC<VitalRingProps> = ({

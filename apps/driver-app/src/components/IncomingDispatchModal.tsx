@@ -9,9 +9,9 @@ interface Props {
 export function IncomingDispatchModal({ job, onAccept, onDismiss }: Props) {
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <div className="modal">
+      <div className="modal dark-card">
         <div className="modal-eyebrow">PRIORITY · LIVE DISPATCH</div>
-        <h2>{job.patient_name}</h2>
+        <h2 className="serif">{job.patient_name}</h2>
         <div className="uid">{job.ihs_uid}</div>
 
         <dl>
@@ -20,16 +20,8 @@ export function IncomingDispatchModal({ job, onAccept, onDismiss }: Props) {
             <dd>{job.chief_complaint}</dd>
           </div>
           <div>
-            <dt>Live GPS</dt>
-            <dd>
-              {job.live_gps.lat.toFixed(5)}, {job.live_gps.lng.toFixed(5)}
-            </dd>
-          </div>
-          <div>
-            <dt>Registered base</dt>
-            <dd>
-              {job.home_gps.lat.toFixed(5)}, {job.home_gps.lng.toFixed(5)}
-            </dd>
+            <dt>Location</dt>
+            <dd>{job.sector || 'Ananthapur Urban · Sector 04'}</dd>
           </div>
           <div>
             <dt>Distance · ETA</dt>
@@ -40,20 +32,18 @@ export function IncomingDispatchModal({ job, onAccept, onDismiss }: Props) {
           {job.hospital_name && (
             <div>
               <dt>Receiving hospital</dt>
-              <dd>{job.hospital_name}</dd>
+              <dd>
+                {job.hospital_name}
+                {job.hospital_bay ? ` · ${job.hospital_bay}` : ''}
+              </dd>
             </div>
           )}
         </dl>
 
-        <button type="button" className="btn btn-danger trip-btn" onClick={onAccept}>
-          ACCEPT DISPATCH
+        <button type="button" className="btn btn-danger trip-btn ios-press" onClick={onAccept}>
+          1. ACKNOWLEDGE DISPATCH
         </button>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          style={{ width: '100%', marginTop: 8 }}
-          onClick={onDismiss}
-        >
+        <button type="button" className="btn btn-ghost ios-press" onClick={onDismiss}>
           Acknowledge later
         </button>
       </div>

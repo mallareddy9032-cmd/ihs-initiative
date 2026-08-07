@@ -1,37 +1,71 @@
 // ============================================================================
 // FILE: src/components/ui/TopNav.tsx
-// CONTEXT: Next.js - macOS Sequoia Light command header
+// CONTEXT: Granola-style Command Center header with live KPIs
 // ============================================================================
 
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 
 export const TopNav: React.FC<{
-  operatorName: string;
-  activeCases: number;
+  operatorName?: string;
+  activeCases?: number;
+  mobilizedUnits?: number;
+  avgTatLabel?: string;
   connectionLabel?: string;
   activePath?: string;
-}> = ({ operatorName, activeCases, connectionLabel, activePath }) => {
+  audioEnabled?: boolean;
+  onToggleAudio?: () => void;
+}> = ({
+  operatorName = 'Dispatcher Desk #04',
+  activeCases = 0,
+  mobilizedUnits = 0,
+  avgTatLabel = '03:42 mins',
+  connectionLabel,
+  activePath,
+  audioEnabled = true,
+  onToggleAudio,
+}) => {
+  const [clock, setClock] = useState('');
+
+  useEffect(() => {
+    const tick = () => {
+      setClock(
+        new Date().toLocaleTimeString('en-IN', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false,
+        }),
+      );
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
   const linkClass = (path: string) =>
     `text-xs font-bold tracking-wide px-2.5 py-1 rounded-full border spring-press ios-press ${
       activePath === path
-        ? 'bg-[#007AFF] border-[#007AFF] text-white'
-        : 'border-transparent text-[#8E8E93] hover:text-[#1C1C1E] hover:bg-black/[0.04]'
+        ? 'bg-[#0D5C4D] border-[#0D5C4D] text-white'
+        : 'border-transparent text-[#6B6B70] hover:text-[#1C1C1E] hover:bg-black/[0.04]'
     }`;
 
-  const wsLive =
-    !connectionLabel ||
-    /live|open|connected|ws live/i.test(connectionLabel);
-
   return (
-    <nav className="mx-3 mt-3 mb-1 glass-panel ios-capsule px-4 sm:px-6 py-3 flex justify-between items-center text-[#1C1C1E] gap-3 sticky top-3 z-40">
-      <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-        <div className="bg-[#FF2D55] text-white font-black px-3 py-1.5 rounded-full text-sm tracking-wider shrink-0 ios-press">
+    <nav className="mx-3 mt-3 mb-2 glass-panel rounded-[22px] px-4 sm:px-5 py-3 flex flex-wrap justify-between items-center text-[#1C1C1E] gap-3 sticky top-3 z-40">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="bg-[#0D5C4D] text-white font-black px-3 py-1.5 rounded-full text-sm tracking-wider shrink-0 ios-press">
           IHS COMMAND
         </div>
-        <div className="hidden sm:flex items-center gap-1 border-l border-black/5 pl-4">
+        <div className="min-w-0">
+          <div className="font-serif text-lg leading-tight text-[#1C1C1E]">Dispatch Command</div>
+          <div className="flex items-center gap-1.5 text-[10px] font-bold text-[#0D5C4D] tracking-wide">
+            <span className="led-dot bg-[#0D5C4D] glow-green" />
+            24/7 GIS HUD · ANANTHAPUR 50KM PILOT GRID
+          </div>
+        </div>
+        <div className="hidden lg:flex items-center gap-1 border-l border-black/5 pl-3 ml-1">
           <Link href="/dispatcher/dashboard" className={linkClass('/dispatcher/dashboard')}>
             LIVE OPS
           </Link>
@@ -39,46 +73,44 @@ export const TopNav: React.FC<{
             ANALYTICS
           </Link>
         </div>
-        <span className="hidden md:inline text-[#8E8E93] text-xs font-mono border-l border-black/5 pl-4 tabular-nums">
-          Node: AP-SOUTH-2
-        </span>
+      </div>
+
+      <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-center">
+        <div className="cmd-card px-3 py-1.5 min-w-[96px]">
+          <div className="text-[9px] font-bold uppercase tracking-wider text-[#6B6B70]">Active</div>
+          <div className="font-mono-ops text-sm font-bold text-[#DC2626]">
+            {activeCases} Critical
+          </div>
+        </div>
+        <div className="cmd-card px-3 py-1.5 min-w-[96px]">
+          <div className="text-[9px] font-bold uppercase tracking-wider text-[#6B6B70]">Fleet</div>
+          <div className="font-mono-ops text-sm font-bold text-[#0D5C4D]">
+            {mobilizedUnits} Units
+          </div>
+        </div>
+        <div className="cmd-card px-3 py-1.5 min-w-[104px]">
+          <div className="text-[9px] font-bold uppercase tracking-wider text-[#6B6B70]">Avg TAT</div>
+          <div className="font-mono-ops text-sm font-bold text-[#D97706]">{avgTatLabel}</div>
+        </div>
         {connectionLabel && (
-          <span className="hidden lg:inline-flex items-center gap-2 text-xs font-mono text-[#8E8E93] border-l border-black/5 pl-4">
-            <span
-              className={`led-dot ${wsLive ? 'bg-[#34C759] glow-green' : 'bg-[#FF9500] glow-amber'}`}
-            />
-            <span className="tabular-nums text-[#1C1C1E]">{connectionLabel}</span>
-          </span>
+          <div className="hidden md:block text-[10px] font-mono-ops text-[#6B6B70] border-l border-black/5 pl-3">
+            {connectionLabel}
+          </div>
         )}
       </div>
 
-      <div className="flex items-center gap-3 sm:gap-6 shrink-0">
-        <div className="sm:hidden flex gap-1">
-          <Link href="/dispatcher/dashboard" className={linkClass('/dispatcher/dashboard')}>
-            OPS
-          </Link>
-          <Link href="/dispatcher/analytics" className={linkClass('/dispatcher/analytics')}>
-            STATS
-          </Link>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="relative flex h-3 w-3">
-            {activeCases > 0 && (
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FF2D55] opacity-75" />
-            )}
-            <span
-              className={`relative inline-flex rounded-full h-3 w-3 led-dot ${
-                activeCases > 0 ? 'bg-[#FF2D55] glow-red' : 'bg-[#34C759] glow-green'
-              }`}
-            />
-          </span>
-          <span className="text-sm font-bold text-[#1C1C1E] tabular-nums">
-            {activeCases} ACTIVE
-          </span>
-        </div>
-
-        <div className="text-sm text-[#007AFF] font-bold border-l border-black/5 pl-4 sm:pl-6">
-          {operatorName}
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        <button
+          type="button"
+          onClick={onToggleAudio}
+          className="ios-press rounded-full border border-black/8 bg-white px-3 py-1.5 text-xs font-bold text-[#1C1C1E]"
+          aria-pressed={audioEnabled}
+        >
+          {audioEnabled ? '🔊 Active' : '🔇 Muted'}
+        </button>
+        <div className="text-right">
+          <div className="text-xs font-bold text-[#0D5C4D]">{operatorName}</div>
+          <div className="font-mono-ops text-[11px] text-[#6B6B70] tabular-nums">{clock}</div>
         </div>
       </div>
     </nav>

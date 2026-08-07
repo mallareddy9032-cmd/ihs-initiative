@@ -11,6 +11,7 @@ import {
   StyleSheet,
   ScrollView,
   TextInput,
+  Platform,
   type ViewStyle,
   type TextStyle,
 } from 'react-native';
@@ -195,7 +196,11 @@ const styles = StyleSheet.create({
   screenTitle: {
     color: colors.darkSlate,
     fontSize: 26,
-    fontWeight: '800',
+    fontWeight: '400',
+    fontFamily: Platform.select({
+      web: '"Playfair Display", Georgia, serif',
+      default: 'Georgia',
+    }),
   },
   screenSubtitle: {
     color: colors.textSecondary,
@@ -215,7 +220,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
     shadowColor: '#000',
-    shadowOpacity: 0.03,
+    shadowOpacity: 0.04,
     shadowRadius: 30,
     shadowOffset: { width: 0, height: 10 },
     elevation: 2,
@@ -231,12 +236,12 @@ const styles = StyleSheet.create({
   },
   primaryBtn: {
     backgroundColor: colors.primary,
-    borderRadius: 14,
+    borderRadius: 999,
     paddingVertical: 14,
     alignItems: 'center',
     marginTop: 8,
     shadowColor: colors.primary,
-    shadowOpacity: 0.18,
+    shadowOpacity: 0.22,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
   },

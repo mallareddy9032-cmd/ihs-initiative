@@ -1,64 +1,133 @@
 import { useMemo, useState } from 'react';
 import { useAdminSocket } from './hooks/useAdminSocket';
-import type { RegionFilter } from './types';
+import {
+  DEMO_AUDIT,
+  DEMO_GOVERNANCE,
+  DEMO_KPIS,
+  PILOT_NODES,
+  TAT_BREAKDOWN,
+  type AuditEntry,
+  type DateRange,
+  type GovernanceToggle,
+  type PilotNode,
+} from './types';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
-const STEP_LABELS = [
-  'SOS Triggered',
-  'Unit Mobilized',
-  'Driver Pipeline',
-  'ER Intake Confirmed',
-];
+const RANGE_LABELS: Record<DateRange, string> = {
+  today: 'Today',
+  '7d': 'Last 7 Days',
+  '30d': '30-Day Pilot Trend',
+};
+
+function statusLabel(status: PilotNode['status']): string {
+  if (status === 'normal') return '🟢 Normal Operations';
+  if (status === 'high') return '🟡 High Demand';
+  return '🔴 Surge / Unit Dispatched';
+}
+
+function hashShort(full: string): string {
+  if (full.includes('…')) return full;
+  if (full.length <= 12) return full;
+  return `${full.slice(0, 4)}…${full.slice(-4)}`;
+}
 
 export default function App() {
-  const {
-    connectionState,
-    snapshot,
-    events,
-    error,
-    simOpen,
-    setSimOpen,
-    simSteps,
-    simDone,
-    resetSimulationUi,
-  } = useAdminSocket();
-  const [region, setRegion] = useState<RegionFilter>('ALL');
+  const { connectionState, snapshot, events, error, simOpen, setSimOpen, simSteps, simDone, resetSimulationUi } =
+    useAdminSocket();
+  const [range, setRange] = useState<DateRange>('7d');
+  const [sector, setSector] = useState<'all' | string>('all');
+  const [nodes, setNodes] = useState<PilotNode[]>(PILOT_NODES);
+  const [audit, setAudit] = useState<AuditEntry[]>(DEMO_AUDIT);
+  const [governance, setGovernance] = useState<GovernanceToggle[]>(DEMO_GOVERNANCE);
+  const [toast, setToast] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [chainBusy, setChainBusy] = useState(false);
 
-  const regions = useMemo(() => {
-    if (!snapshot) return [];
-    if (region === 'ALL') return snapshot.regions;
-    return snapshot.regions.filter((r) => r.id === region);
-  }, [snapshot, region]);
+  const kpis = useMemo(() => {
+    const live = snapshot?.kpis;
+    if (!live) return DEMO_KPIS;
+    return {
+      totalDispatches: DEMO_KPIS.totalDispatches,
+      dispatchDeltaPct: DEMO_KPIS.dispatchDeltaPct,
+      sub5TatSuccessPct: DEMO_KPIS.sub5TatSuccessPct,
+      sub5TargetPct: DEMO_KPIS.sub5TargetPct,
+      avgResponseLabel:
+        live.avgTatMin != null
+          ? `${String(Math.floor(live.avgTatMin)).padStart(2, '0')}:${String(
+              Math.round((live.avgTatMin % 1) * 60),
+            ).padStart(2, '0')}`
+          : DEMO_KPIS.avgResponseLabel,
+      fleetMobilized: Math.round(((live.fleetUtilization?.activePct ?? 80) / 100) * 10),
+      fleetTotal: 10,
+    };
+  }, [snapshot]);
 
-  const fleet = useMemo(() => {
-    if (!snapshot) return [];
-    if (region === 'ALL') return snapshot.fleetHealth;
-    const name =
-      region === 'VIZAG'
-        ? 'Vizag'
-        : region === 'HYD'
-          ? 'Hyderabad'
-          : 'Khammam';
-    return snapshot.fleetHealth.filter((f) => f.region.includes(name));
-  }, [snapshot, region]);
+  const filteredNodes = useMemo(() => {
+    if (sector === 'all') return nodes;
+    return nodes.filter((n) => n.id === sector);
+  }, [nodes, sector]);
 
-  const kpis = snapshot?.kpis;
-  const tatTone =
-    !kpis ? 'live' : kpis.avgTatMin <= kpis.tatTargetMin ? 'good' : kpis.avgTatMin <= 6 ? 'warn' : 'bad';
+  const fleetPct = Math.round((kpis.fleetMobilized / kpis.fleetTotal) * 100);
+  const wsLive = connectionState === 'open';
 
-  const pulseLive = async () => {
-    setBusy(true);
-    try {
-      await fetch(`${API_BASE}/v1/demo/inject-panic`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ihs_uid: 'IHS-ADMIN-00001' }),
-      });
-    } finally {
-      setBusy(false);
+  const showToast = (msg: string) => {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 2800);
+  };
+
+  const exportDpr = () => {
+    const lines = [
+      'IHS Executive DPR — Ananthapur 50km Pilot',
+      `Range: ${RANGE_LABELS[range]}`,
+      `Generated: ${new Date().toISOString()}`,
+      '',
+      `Total Dispatches: ${kpis.totalDispatches}`,
+      `Sub-5-Min TAT Success: ${kpis.sub5TatSuccessPct}%`,
+      `Average Response Time: ${kpis.avgResponseLabel} Mins`,
+      `Active Fleet Saturation: ${kpis.fleetMobilized} / ${kpis.fleetTotal}`,
+      '',
+      'SHA-256 Audit Ledger',
+      ...audit.map((a) => `[${a.time}] ${a.event} -> ${a.subject} -> Hash: ${a.hash}`),
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `IHS-DPR-Ananthapur-${range}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('DPR report exported');
+  };
+
+  const cycleNode = (id: string) => {
+    setNodes((prev) =>
+      prev.map((n) => {
+        if (n.id !== id) return n;
+        const next =
+          n.status === 'normal' ? 'high' : n.status === 'high' ? 'surge' : 'normal';
+        return { ...n, status: next };
+      }),
+    );
+  };
+
+  const toggleGov = (id: string) => {
+    setGovernance((prev) =>
+      prev.map((g) => (g.id === id ? { ...g, enabled: !g.enabled } : g)),
+    );
+    const g = governance.find((x) => x.id === id);
+    if (g) {
+      showToast(`${g.label}: ${g.enabled ? 'OFF' : 'ON'}`);
+      setAudit((prev) => [
+        {
+          id: `g-${Date.now()}`,
+          time: new Date().toLocaleTimeString('en-GB', { hour12: false }),
+          event: 'GOVERNANCE_TOGGLE',
+          subject: `${g.label} → ${g.enabled ? 'DISABLED' : 'ENABLED'}`,
+          hash: `${Math.random().toString(16).slice(2, 10)}…${Math.random().toString(16).slice(2, 6)}`,
+        },
+        ...prev,
+      ].slice(0, 12));
     }
   };
 
@@ -71,361 +140,350 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ihs_uid: 'IHS-ADMIN-00001',
-          fleet_id: 'AMB-VSKP-07',
-          bay_id: 'BAY-3',
-          er_doctor: 'Dr. Meera Krishnan',
+          ihs_uid: 'IHS-8802',
+          fleet_id: 'ALS-02',
+          bay_id: 'T-03',
+          er_doctor: 'Dr. Meera A.',
         }),
       });
-      const body = (await res.json()) as { error?: string };
-      if (!res.ok) {
-        throw new Error(body.error || 'Failed to start simulation');
-      }
-    } catch (err) {
-      setSimOpen(true);
-      alert(err instanceof Error ? err.message : 'Simulation failed');
-      setChainBusy(false);
-      return;
+      if (!res.ok) throw new Error('Simulation unavailable');
+    } catch {
+      setAudit((prev) => [
+        {
+          id: `sim-${Date.now()}`,
+          time: new Date().toLocaleTimeString('en-GB', { hour12: false }),
+          event: 'SIM_CHAIN_LOCAL',
+          subject: 'SOS → ALS-02 → Bay T-03 (offline demo)',
+          hash: 'c0ffee12ab34…9f01',
+        },
+        ...prev,
+      ]);
+      showToast('Offline demo chain recorded to ledger');
+      setSimOpen(false);
     }
-    // Keep button locked until SIMULATION_COMPLETE / ~5s fallback
-    window.setTimeout(() => setChainBusy(false), 6000);
+    window.setTimeout(() => setChainBusy(false), 4000);
+  };
+
+  const pulseLive = async () => {
+    setBusy(true);
+    try {
+      await fetch(`${API_BASE}/v1/demo/inject-panic`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ihs_uid: 'IHS-8802' }),
+      });
+      showToast('Live SOS pulse injected');
+    } catch {
+      setAudit((prev) => [
+        {
+          id: `sos-${Date.now()}`,
+          time: new Date().toLocaleTimeString('en-GB', { hour12: false }),
+          event: 'SOS_TRIGGERED',
+          subject: 'Patient #IHS-8802',
+          hash: '8f9a2c11d4e07b3a…3c12',
+        },
+        ...prev,
+      ]);
+      showToast('Local SOS ledger entry appended');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <div className="app">
+      {toast && <div className="toast">{toast}</div>}
+
       {simOpen && (
         <div className="sim-backdrop" role="dialog" aria-modal="true">
           <div className="sim-modal">
-            <div className="sim-eyebrow">LIVE DEMO CASCADE</div>
-            <h2>Full Emergency Chain</h2>
-            <p className="sim-sub">
-              SOS → Dispatch AMB-VSKP-07 → Driver pipeline → Trauma Bay 3 intake
-            </p>
+            <p className="sim-eyebrow">LIVE DEMO CASCADE</p>
+            <h2 className="serif">Full Emergency Chain</h2>
+            <p className="sim-sub">SOS → ALS-02 → Driver HUD → Trauma Bay T-03</p>
             <ol className="sim-steps">
-              {STEP_LABELS.map((label, idx) => {
-                const stepNum = idx + 1;
-                const entry = [...simSteps]
-                  .reverse()
-                  .find((s) => s.step === stepNum);
-                const state = entry?.status || (chainBusy && stepNum === 1 ? 'pending' : 'idle');
-                return (
-                  <li key={label} className={`sim-step ${state}`}>
-                    <span className="sim-mark">
-                      {state === 'complete' ? '✓' : state === 'running' ? '…' : state === 'error' ? '!' : stepNum}
-                    </span>
-                    <div>
-                      <strong>
-                        Step {stepNum}/4{entry?.status === 'complete' ? ' Complete' : ''}
-                        {entry?.status === 'running' ? '…' : ''}
-                      </strong>
-                      <div className="sim-msg">{entry?.message || label}</div>
-                    </div>
-                  </li>
-                );
-              })}
+              {['SOS Triggered', 'Unit Mobilized', 'Driver Pipeline', 'ER Intake Confirmed'].map(
+                (label, idx) => {
+                  const stepNum = idx + 1;
+                  const entry = [...simSteps].reverse().find((s) => s.step === stepNum);
+                  const state =
+                    entry?.status || (chainBusy && stepNum === 1 ? 'pending' : 'idle');
+                  return (
+                    <li key={label} className={`sim-step ${state}`}>
+                      <span className="sim-mark">
+                        {state === 'complete'
+                          ? '✓'
+                          : state === 'running'
+                            ? '…'
+                            : state === 'error'
+                              ? '!'
+                              : stepNum}
+                      </span>
+                      <div>
+                        <strong>Step {stepNum}/4</strong>
+                        <div className="sim-msg">{entry?.message || label}</div>
+                      </div>
+                    </li>
+                  );
+                },
+              )}
             </ol>
-            {(simDone || !chainBusy) && simSteps.some((s) => s.status === 'complete') && (
+            {(simDone || !chainBusy) && (
               <button
                 type="button"
-                className="btn"
+                className="btn btn-primary"
                 style={{ width: '100%', marginTop: 12 }}
                 onClick={() => {
                   setSimOpen(false);
                   setChainBusy(false);
                 }}
               >
-                {simDone ? 'Close' : 'Hide progress'}
+                Close
               </button>
             )}
           </div>
         </div>
       )}
 
+      {/* A. Executive Header */}
       <header className="topbar">
-        <div className="brand-row">
-          <div className="brand">IHS EXEC</div>
+        <div className="identity">
+          <div className="logo-mark" aria-hidden>
+            IHS
+          </div>
           <div>
-            <h1>SuperAdmin · Regional Analytics</h1>
-            <p>Node AP-SOUTH-2 · global emergency telemetry</p>
+            <div className="serif brand-title">Executive Analytics</div>
+            <div className="pilot-glow">
+              <span className="pulse-dot" />
+              PILOT OVERVIEW · ANANTHAPUR 50KM GRID
+            </div>
           </div>
         </div>
-        <div className="controls">
+
+        <div className="filter-bar">
+          <div className="seg">
+            {(Object.keys(RANGE_LABELS) as DateRange[]).map((key) => (
+              <button
+                key={key}
+                type="button"
+                className={`seg-btn ios-press ${range === key ? 'active' : ''}`}
+                onClick={() => setRange(key)}
+              >
+                {RANGE_LABELS[key]}
+              </button>
+            ))}
+          </div>
           <select
-            className="filter"
-            value={region}
-            onChange={(e) => setRegion(e.target.value as RegionFilter)}
+            className="sector-select"
+            value={sector}
+            onChange={(e) => setSector(e.target.value)}
+            aria-label="Sector selector"
           >
-            <option value="ALL">All Regions</option>
-            <option value="VIZAG">Vizag Metro</option>
-            <option value="HYD">Hyderabad Central</option>
-            <option value="KHAMMAM">Khammam Range</option>
+            <option value="all">All 20 Ananthapur Nodes</option>
+            {nodes.map((n) => (
+              <option key={n.id} value={n.id}>
+                {n.name}
+              </option>
+            ))}
           </select>
-          <div className={`pill ${connectionState}`}>{connectionState.toUpperCase()}</div>
-          <button
-            type="button"
-            className="btn-chain"
-            disabled={chainBusy}
-            onClick={() => void runFullChain()}
-          >
-            ⚡ SIMULATE FULL EMERGENCY CHAIN
+        </div>
+
+        <div className="header-actions">
+          <button type="button" className="btn btn-ghost ios-press" onClick={exportDpr}>
+            📥 Export DPR Report
           </button>
-          <button type="button" className="btn" disabled={busy} onClick={() => void pulseLive()}>
-            Pulse live SOS
-          </button>
+          <div className="admin-chip">
+            <div className="avatar" aria-hidden>
+              SA
+            </div>
+            <span>SuperAdmin Desk</span>
+          </div>
+          <div className={`sec-pill ${wsLive ? 'live' : ''}`}>
+            🔒 SHA-256 LEDGER ACTIVE
+          </div>
         </div>
       </header>
 
-      {error && (
-        <div style={{ background: '#7f1d1d', padding: '8px 22px', fontSize: 13 }}>{error}</div>
+      {error && !wsLive && (
+        <div className="err-banner">{error} · Showing pilot demo metrics</div>
       )}
 
-      <div className="content">
-        <section className="kpi-grid">
-          <article className={`kpi ios-press ios-spring ${tatTone}`}>
-            <div className="label">Avg Emergency TAT</div>
-            <div className="value">{kpis ? `${kpis.avgTatMin.toFixed(1)}m` : '—'}</div>
-            <div className="hint">Target: &lt; {kpis?.tatTargetMin ?? 5.0} mins</div>
+      <main className="content">
+        {/* B. Macro KPI Cards */}
+        <section className="kpi-row">
+          <article className="kpi-card mint-card ios-press">
+            <span className="kpi-label">Total Dispatches</span>
+            <div className="serif kpi-value">{kpis.totalDispatches.toLocaleString()}</div>
+            <span className="trend-pill up">+{kpis.dispatchDeltaPct}% vs last week</span>
           </article>
-          <article className="kpi live ios-press ios-spring">
-            <div className="label">Active Incidents</div>
-            <div className="value">{kpis?.activeIncidents ?? '—'}</div>
-            <div className="hint">Live counter · WS telemetry</div>
+          <article className="kpi-card mint-card ios-press target-hit">
+            <span className="kpi-label">Sub-5-Min TAT Success</span>
+            <div className="serif kpi-value emerald">{kpis.sub5TatSuccessPct}%</div>
+            <span className="trend-pill emerald">
+              Target: &gt;{kpis.sub5TargetPct}% · On Track
+            </span>
           </article>
-          <article className="kpi ios-press ios-spring">
-            <div className="label">Fleet Utilization</div>
-            <div className="value" style={{ fontSize: 18, lineHeight: 1.35 }}>
-              {kpis
-                ? `${kpis.fleetUtilization.activePct}% / ${kpis.fleetUtilization.standbyPct}% / ${kpis.fleetUtilization.maintenancePct}%`
-                : '—'}
+          <article className="kpi-card mint-card ios-press">
+            <span className="kpi-label">Average Response Time</span>
+            <div className="serif kpi-value mono-num">{kpis.avgResponseLabel}</div>
+            <span className="trend-pill">Mins · Golden Hour Benchmark</span>
+          </article>
+          <article className="kpi-card mint-card ios-press slate">
+            <span className="kpi-label">Active Fleet Saturation</span>
+            <div className="serif kpi-value cyan">
+              {kpis.fleetMobilized} / {kpis.fleetTotal}
             </div>
-            <div className="hint">Active · Standby · Maintenance</div>
-            {kpis && (
-              <div className="ios-pill-meter" aria-label="Fleet active share">
-                <div
-                  className="fill blue"
-                  style={{ width: `${kpis.fleetUtilization.activePct}%` }}
-                />
-              </div>
-            )}
-          </article>
-          <article
-            className={`kpi ios-press ios-spring ${
-              !kpis ? '' : kpis.bedSaturationPct >= 90 ? 'bad' : kpis.bedSaturationPct >= 75 ? 'warn' : 'good'
-            }`}
-          >
-            <div className="label">Hospital Bed Saturation</div>
-            <div className="value">{kpis ? `${kpis.bedSaturationPct}%` : '—'}</div>
-            <div className="hint">Trauma bays occupied (regional avg)</div>
-            <div className="ios-pill-meter" aria-label="Bed saturation">
-              <div
-                className={`fill ${
-                  !kpis
-                    ? ''
-                    : kpis.bedSaturationPct >= 90
-                      ? 'red'
-                      : kpis.bedSaturationPct >= 75
-                        ? 'amber'
-                        : 'green'
-                }`}
-                style={{ width: `${kpis?.bedSaturationPct ?? 0}%` }}
-              />
+            <span className="trend-pill cyan">{fleetPct}% Grid Capacity · Units Mobilized</span>
+            <div className="sat-meter" aria-hidden>
+              <div className="sat-fill" style={{ width: `${fleetPct}%` }} />
             </div>
           </article>
         </section>
 
-        {!!snapshot?.bottlenecks?.length && (
-          <div className="alert-banner">
-            TRIAGE BOTTLENECK:{' '}
-            {snapshot.bottlenecks
-              .map(
-                (b) =>
-                  `${b.region} · ${b.hospital} at ${b.saturationPct}% (${b.severity})`,
-              )
-              .join(' · ')}
-          </div>
-        )}
-
-        <section className="grid-2">
-          <div className="panel">
+        <div className="mid-grid">
+          {/* C. 20-Node Heatmap */}
+          <section className="panel">
             <div className="panel-head">
-              <h2>Regional Performance Breakdown</h2>
-              <span className="mono" style={{ color: 'var(--muted)', fontSize: 11 }}>
-                WS Node · AP-SOUTH-2
-              </span>
+              <h2 className="serif">Regional Grid Performance</h2>
+              <span className="muted">Ananthapur 50km · {filteredNodes.length} nodes</span>
             </div>
-            <div className="panel-body" style={{ overflowX: 'auto' }}>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Region / Zone</th>
-                    <th>Ambulances</th>
-                    <th>Dispatched</th>
-                    <th>Avg Response</th>
-                    <th>Beds</th>
-                    <th>Node Health</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {regions.map((r) => (
-                    <tr key={r.id}>
-                      <td>
-                        <strong>{r.name}</strong>
-                        <div className="mono" style={{ color: 'var(--muted)', fontSize: 11 }}>
-                          {r.zone}
-                        </div>
-                      </td>
-                      <td className="mono">{r.activeAmbulances}</td>
-                      <td className="mono">{r.dispatchedIncidents}</td>
-                      <td className="mono">{r.avgResponseMin.toFixed(1)}m</td>
-                      <td className="mono">{r.bedSaturationPct}%</td>
-                      <td>
-                        <span className={`status-chip ${r.nodeStatus}`}>{r.nodeStatus}</span>
-                        <div className="mono" style={{ color: 'var(--muted)', fontSize: 10, marginTop: 4 }}>
-                          {r.wsNode}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {!regions.length && (
-                    <tr>
-                      <td colSpan={6} style={{ color: 'var(--muted)' }}>
-                        Loading executive snapshot…
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+            <div className="legend">
+              <span>🟢 Normal</span>
+              <span>🟡 High Demand</span>
+              <span>🔴 Surge / Dispatched</span>
             </div>
-          </div>
+            <div className="node-grid">
+              {filteredNodes.map((node) => (
+                <button
+                  key={node.id}
+                  type="button"
+                  className={`node-card ios-press ${node.status}`}
+                  onClick={() => cycleNode(node.id)}
+                  title="Click to cycle status"
+                >
+                  <strong>{node.name}</strong>
+                  <span className="node-status">{statusLabel(node.status)}</span>
+                  <span className="mono node-meta">
+                    {node.dispatches} disp · {node.tatMin.toFixed(1)}m TAT
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
 
-          <div className="panel">
+          {/* D. Golden Hour TAT */}
+          <section className="panel">
             <div className="panel-head">
-              <h2>Live Telemetry Feed</h2>
-              <span className="mono" style={{ color: 'var(--muted)', fontSize: 11 }}>
-                {snapshot?.connectivity
-                  ? `D${snapshot.connectivity.dispatchers} · Dr${snapshot.connectivity.drivers} · H${snapshot.connectivity.hospitals}`
-                  : '—'}
-              </span>
+              <h2 className="serif">Golden Hour TAT</h2>
+              <span className="muted">Target vs actual</span>
             </div>
-            <div className="panel-body">
-              <div className="event-feed">
-                {events.length === 0 && <div>Waiting for global events on /v1/admin/stream…</div>}
-                {events.map((line, idx) => (
-                  <div key={`${idx}-${line}`}>
-                    <strong>▸</strong> {line}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="grid-2">
-          <div className="panel">
-            <div className="panel-head">
-              <h2>Hospital Throughput & ER Handoff</h2>
-            </div>
-            <div className="panel-body">
-              <div className="bars">
-                <div className="bar-row">
-                  <label>
-                    <span>ER Handoff Efficiency (arrival → bay admit)</span>
-                    <strong>{kpis ? `${kpis.erHandoffAvgMin.toFixed(1)} min` : '—'}</strong>
-                  </label>
-                  <div className="ios-pill-meter track">
-                    <div
-                      className={`fill ${
-                        !kpis ? '' : kpis.erHandoffAvgMin <= 6 ? 'green' : kpis.erHandoffAvgMin <= 8 ? 'amber' : 'red'
-                      }`}
-                      style={{
-                        width: `${Math.min(100, ((kpis?.erHandoffAvgMin ?? 0) / 12) * 100)}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {regions.map((r) => (
-                  <div className="bar-row" key={r.id}>
-                    <label>
-                      <span>{r.name} trauma bay saturation</span>
-                      <strong>{r.bedSaturationPct}%</strong>
-                    </label>
-                    <div className="ios-pill-meter track">
+            <div className="tat-list">
+              {TAT_BREAKDOWN.map((row) => {
+                const pct = Math.min(100, Math.round((row.actualSec / row.targetSec) * 100));
+                const ok = row.actualSec <= row.targetSec;
+                return (
+                  <div key={row.id} className="tat-row">
+                    <div className="tat-top">
+                      <strong>{row.label}</strong>
+                      <span className={`mono tat-actual ${ok ? 'ok' : 'breach'}`}>
+                        {row.actualLabel}
+                      </span>
+                    </div>
+                    <div className="tat-bar">
                       <div
-                        className={`fill ${
-                          r.bedSaturationPct >= 90 ? 'red' : r.bedSaturationPct >= 75 ? 'amber' : 'green'
-                        }`}
-                        style={{ width: `${r.bedSaturationPct}%` }}
+                        className={`tat-fill ${ok ? 'ok' : 'breach'}`}
+                        style={{ width: `${pct}%` }}
                       />
                     </div>
+                    <div className="tat-target muted">{row.targetLabel}</div>
                   </div>
-                ))}
-              </div>
+                );
+              })}
             </div>
+            <div className="demo-actions">
+              <button
+                type="button"
+                className="btn btn-primary ios-press"
+                disabled={chainBusy}
+                onClick={() => void runFullChain()}
+              >
+                ⚡ Simulate Full Chain
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost ios-press"
+                disabled={busy}
+                onClick={() => void pulseLive()}
+              >
+                Pulse Live SOS
+              </button>
+            </div>
+          </section>
+        </div>
+
+        {/* E. SHA-256 Audit Ledger */}
+        <section className="panel ledger-panel">
+          <div className="panel-head">
+            <h2 className="serif">SHA-256 Audit Ledger</h2>
+            <span className="ledger-badge">🔒 IMMUTABLE · CRYPTOGRAPHIC VERIFY</span>
           </div>
-
-          <div className="panel">
-            <div className="panel-head">
-              <h2>Fleet Status Monitor</h2>
-            </div>
-            <div className="panel-body">
-              <div className="bars" style={{ marginBottom: 14 }}>
-                <div className="bar-row">
-                  <label>
-                    <span>Active</span>
-                    <strong>{kpis?.fleetUtilization.activePct ?? 0}%</strong>
-                  </label>
-                  <div className="track">
-                    <div
-                      className="fill green"
-                      style={{ width: `${kpis?.fleetUtilization.activePct ?? 0}%` }}
-                    />
-                  </div>
-                </div>
-                <div className="bar-row">
-                  <label>
-                    <span>Standby</span>
-                    <strong>{kpis?.fleetUtilization.standbyPct ?? 0}%</strong>
-                  </label>
-                  <div className="track">
-                    <div
-                      className="fill"
-                      style={{ width: `${kpis?.fleetUtilization.standbyPct ?? 0}%` }}
-                    />
-                  </div>
-                </div>
-                <div className="bar-row">
-                  <label>
-                    <span>Maintenance</span>
-                    <strong>{kpis?.fleetUtilization.maintenancePct ?? 0}%</strong>
-                  </label>
-                  <div className="track">
-                    <div
-                      className="fill amber"
-                      style={{ width: `${kpis?.fleetUtilization.maintenancePct ?? 0}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="fleet-list">
-                {fleet.map((f) => (
-                  <div className="fleet-item" key={f.fleetId}>
-                    <div className="top">
-                      <span>{f.fleetId}</span>
-                      <span>{f.status}</span>
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                      {f.region} · Fuel/Charge {f.fuelPct}% · Shift {f.shiftHours.toFixed(1)}h
-                    </div>
-                    {f.alert && <div className="alert">⚠ {f.alert}</div>}
-                  </div>
+          <div className="ledger-table-wrap">
+            <table className="ledger-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Event</th>
+                  <th>Subject</th>
+                  <th>Hash</th>
+                </tr>
+              </thead>
+              <tbody>
+                {audit.map((row) => (
+                  <tr key={row.id}>
+                    <td className="mono">[{row.time}]</td>
+                    <td>
+                      <code className="event-code">{row.event}</code>
+                    </td>
+                    <td>{row.subject}</td>
+                    <td className="mono hash">Hash: {hashShort(row.hash)}</td>
+                  </tr>
                 ))}
-              </div>
+              </tbody>
+            </table>
+          </div>
+          {events.length > 0 && (
+            <div className="ws-feed muted">
+              Live WS: {events.slice(0, 3).join(' · ')}
             </div>
+          )}
+        </section>
+
+        {/* F. Governance Controls */}
+        <section className="panel gov-panel">
+          <div className="panel-head">
+            <h2 className="serif">System Governance & Pilot Configuration</h2>
+            <span className="muted">Regional dispatch rules</span>
+          </div>
+          <div className="gov-grid">
+            {governance.map((g) => (
+              <label key={g.id} className={`gov-card ios-press ${g.enabled ? 'on' : ''}`}>
+                <div className="gov-text">
+                  <strong>{g.label}</strong>
+                  <span>{g.description}</span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={g.enabled}
+                  className={`toggle ${g.enabled ? 'on' : ''}`}
+                  onClick={() => toggleGov(g.id)}
+                >
+                  <span className="knob" />
+                </button>
+              </label>
+            ))}
           </div>
         </section>
-      </div>
+      </main>
     </div>
   );
 }

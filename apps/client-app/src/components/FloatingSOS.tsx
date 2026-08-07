@@ -169,12 +169,12 @@ export const FloatingSOS: React.FC<FloatingSOSProps> = ({ ihsUid }) => {
           },
           (error) => {
             if (Platform.OS === 'web') {
-              const lat = 17.7231;
-              const lng = 83.3012;
+              const lat = 14.6819;
+              const lng = 77.6006;
               openTracking(lat, lng, 'DEMO_GPS_FALLBACK');
               Alert.alert(
-                'Using demo location',
-                'Location permission unavailable — tracking opened with Visakhapatnam demo coordinates.',
+                'Using pilot demo location',
+                'Location permission unavailable — tracking opened with Ananthapur Urban grid coordinates.',
               );
               resolve();
               return;

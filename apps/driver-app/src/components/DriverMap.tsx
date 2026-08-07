@@ -4,9 +4,16 @@ import type { Gps } from '../types';
 interface DriverMapProps {
   driver: Gps;
   patient: Gps;
+  hospital?: Gps | null;
+  phase?: 'to_patient' | 'to_hospital';
 }
 
-export function DriverMap({ driver, patient }: DriverMapProps) {
+export function DriverMap({
+  driver,
+  patient,
+  hospital,
+  phase = 'to_patient',
+}: DriverMapProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapRef = useRef<any>(null);
@@ -27,9 +34,9 @@ export function DriverMap({ driver, patient }: DriverMapProps) {
         attributionControl: true,
       }).setView([driver.lat, driver.lng], 14);
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; CARTO',
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> · CARTO',
         subdomains: 'abcd',
         maxZoom: 19,
       }).addTo(map);
@@ -40,7 +47,7 @@ export function DriverMap({ driver, patient }: DriverMapProps) {
       resizeHandler = () => map.invalidateSize();
       window.addEventListener('resize', resizeHandler);
       window.setTimeout(resizeHandler, 60);
-      window.setTimeout(resizeHandler, 250);
+      window.setTimeout(resizeHandler, 280);
     })();
 
     return () => {
@@ -64,45 +71,77 @@ export function DriverMap({ driver, patient }: DriverMapProps) {
 
       layer.clearLayers();
 
-      const pin = (color: string) =>
+      const pin = (color: string, size = 16) =>
         L.divIcon({
           className: 'ihs-driver-pin',
-          html: `<div style="width:18px;height:18px;border-radius:999px;background:${color};border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.5)"></div>`,
-          iconSize: [18, 18],
-          iconAnchor: [9, 9],
+          html: `<div style="width:${size}px;height:${size}px;border-radius:999px;background:${color};border:2px solid #fff;box-shadow:0 0 0 3px ${color}55,0 4px 12px rgba(0,0,0,.45)"></div>`,
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2],
         });
 
-      L.marker([driver.lat, driver.lng], { icon: pin('#34C759'), title: 'Ambulance' })
-        .bindPopup('<strong>Your unit</strong>')
+      L.marker([driver.lat, driver.lng], { icon: pin('#0D5C4D', 18), title: 'Ambulance' })
+        .bindPopup('<strong>Your ALS unit</strong>')
         .addTo(layer);
 
-      L.marker([patient.lat, patient.lng], { icon: pin('#FF2D55'), title: 'Patient' })
+      L.marker([patient.lat, patient.lng], { icon: pin('#DC2626', 16), title: 'Patient' })
         .bindPopup('<strong>Patient</strong>')
         .addTo(layer);
+
+      if (hospital) {
+        L.marker([hospital.lat, hospital.lng], { icon: pin('#D97706', 16), title: 'ER' })
+          .bindPopup('<strong>GGH Ananthapuramu ER</strong>')
+          .addTo(layer);
+      }
+
+      const routeColor = phase === 'to_hospital' ? '#D97706' : '#0D5C4D';
+      const target = phase === 'to_hospital' && hospital ? hospital : patient;
 
       L.polyline(
         [
           [driver.lat, driver.lng],
-          [patient.lat, patient.lng],
+          [target.lat, target.lng],
         ],
-        { color: '#007AFF', weight: 4, opacity: 0.95 },
+        { color: routeColor, weight: 5, opacity: 0.95 },
       ).addTo(layer);
 
-      const bounds = L.latLngBounds([
+      if (phase === 'to_hospital' && hospital) {
+        L.polyline(
+          [
+            [patient.lat, patient.lng],
+            [hospital.lat, hospital.lng],
+          ],
+          { color: '#64748B', weight: 3, opacity: 0.55, dashArray: '6 6' },
+        ).addTo(layer);
+      }
+
+      const points: [number, number][] = [
         [driver.lat, driver.lng],
         [patient.lat, patient.lng],
-      ]);
-      map.fitBounds(bounds.pad(0.4), { maxZoom: 16, animate: true });
+      ];
+      if (hospital) points.push([hospital.lat, hospital.lng]);
+
+      const bounds = L.latLngBounds(points);
+      map.fitBounds(bounds.pad(0.35), { maxZoom: 15, animate: true });
       window.setTimeout(() => map.invalidateSize(), 40);
+      window.setTimeout(() => map.invalidateSize(), 280);
     })();
-  }, [driver.lat, driver.lng, patient.lat, patient.lng]);
+  }, [
+    driver.lat,
+    driver.lng,
+    patient.lat,
+    patient.lng,
+    hospital?.lat,
+    hospital?.lng,
+    phase,
+  ]);
 
   return (
     <div className="map-shell">
-      <div ref={hostRef} style={{ width: '100%', height: '100%' }} />
+      <div ref={hostRef} className="map-host" />
       <div className="map-legend">
-        ● Green = your unit
-        <br />● Red = patient
+        <span className="leg emerald">● Unit</span>
+        <span className="leg red">● Patient</span>
+        <span className="leg amber">● GGH ER</span>
       </div>
     </div>
   );

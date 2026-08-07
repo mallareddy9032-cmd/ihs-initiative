@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { IncomingTransport } from '../types';
+import type { IncomingTransport, Vitals } from '../types';
 
 export type ConnState = 'connecting' | 'open' | 'reconnecting' | 'closed' | 'error';
 
@@ -45,6 +45,7 @@ export function useHospitalSocket() {
               er_doctor?: string;
               status?: string;
               label?: string;
+              vitals?: Vitals;
             };
           };
 
@@ -54,9 +55,19 @@ export function useHospitalSocket() {
             setIncoming((prev) => {
               const next: IncomingTransport = {
                 ...p,
-                patient_age: p.patient_age ?? 54,
+                patient_age: p.patient_age ?? 58,
                 triage_priority: p.triage_priority || 'RED',
-                vitals: p.vitals || { hr: 110, spo2: 92, bp_sys: 100, bp_dia: 60 },
+                vitals: p.vitals || {
+                  hr: 118,
+                  spo2: 94,
+                  bp_sys: 140,
+                  bp_dia: 90,
+                  note: 'O2 initiated @ 4L/min, IV access secured',
+                  on_room_air: true,
+                },
+                vehicle_reg: p.vehicle_reg || 'AP-02-EX-2214',
+                vehicle_type: p.vehicle_type || 'Force Traveller ALS',
+                driver_name: p.driver_name || 'Suresh Naidu',
                 eta_minutes: etaMin,
                 eta_deadline_ms: Date.now() + etaMin * 60_000,
               };
@@ -64,6 +75,28 @@ export function useHospitalSocket() {
               return [next, ...others];
             });
             setToast(`Inbound: ${p.patient_name} · ${p.triage_priority}`);
+          }
+
+          if (
+            (msg.event === 'PRE_ARRIVAL_VITALS' || msg.event === 'DRIVER_STATUS_UPDATE') &&
+            msg.payload?.case_id
+          ) {
+            setIncoming((prev) =>
+              prev.map((item) => {
+                if (item.case_id !== msg.payload!.case_id) return item;
+                return {
+                  ...item,
+                  driver_status: msg.payload!.status || item.driver_status,
+                  vitals: msg.payload!.vitals
+                    ? { ...item.vitals, ...msg.payload!.vitals }
+                    : item.vitals,
+                  eta_minutes:
+                    typeof (msg.payload as { eta_minutes?: number }).eta_minutes === 'number'
+                      ? (msg.payload as { eta_minutes: number }).eta_minutes
+                      : item.eta_minutes,
+                };
+              }),
+            );
           }
 
           if (msg.event === 'BAY_RESERVED' && msg.payload) {

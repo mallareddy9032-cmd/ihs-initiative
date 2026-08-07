@@ -1,39 +1,48 @@
-/* Option A — Apple HIG Light Theme with Ambient Mesh Depth (canonical tokens) */
+/* Granola × Nuraform — Patient Vault canvas tokens */
 :root {
-  --option-a-canvas: #f2f2f7;
+  --option-a-canvas: #fdfbf7;
   --option-a-surface: #ffffff;
-  --option-a-border: rgba(0, 0, 0, 0.05);
+  --option-a-border: rgba(28, 28, 30, 0.08);
   --option-a-text: #1c1c1e;
-  --option-a-muted: #8e8e93;
-  --option-a-blue: #007aff;
-  --option-a-green: #34c759;
-  --option-a-red: #ff2d55;
-  --option-a-purple: #5856d6;
-  --option-a-amber: #ff9500;
-  --option-a-glass: rgba(255, 255, 255, 0.82);
-  --option-a-shadow: 0 10px 30px rgba(0, 0, 0, 0.03);
+  --option-a-muted: #6b6b70;
+  --option-a-blue: #0d5c4d;
+  --option-a-green: #0d5c4d;
+  --option-a-red: #c53030;
+  --option-a-purple: #6b46c1;
+  --option-a-amber: #b7791f;
+  --option-a-glass: rgba(253, 251, 247, 0.88);
+  --option-a-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
   --option-a-radius: 24px;
-  --option-a-mesh: radial-gradient(circle at 10% 10%, rgba(0, 122, 255, 0.03) 0%, transparent 50%),
-    radial-gradient(circle at 90% 90%, rgba(255, 45, 85, 0.03) 0%, transparent 50%), #f2f2f7;
+  --option-a-mesh: radial-gradient(ellipse 60% 50% at 8% 0%, #e2f1e7 0%, transparent 55%),
+    radial-gradient(ellipse 55% 45% at 92% 18%, #f7ebe8 0%, transparent 50%),
+    radial-gradient(ellipse 40% 40% at 70% 90%, rgba(226, 241, 231, 0.55) 0%, transparent 55%),
+    #fdfbf7;
+  --font-serif: 'Playfair Display', Georgia, 'Times New Roman', serif;
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
 }
 
 .option-a-canvas {
   background: var(--option-a-mesh) !important;
   color: var(--option-a-text);
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI',
-    system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 
 .option-a-card {
   background: #ffffff;
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(28, 28, 30, 0.08);
   border-radius: 24px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.03);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
 }
 
 .option-a-glass {
-  background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  background: rgba(253, 251, 247, 0.88);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid rgba(28, 28, 30, 0.08);
+}
+
+.option-a-serif {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -0.02em;
 }

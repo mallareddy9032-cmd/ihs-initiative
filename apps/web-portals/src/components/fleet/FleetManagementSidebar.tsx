@@ -1,6 +1,6 @@
 // ============================================================================
 // FILE: src/components/fleet/FleetManagementSidebar.tsx
-// CONTEXT: Command Center — active ambulances, drivers, hospital distance, assign
+// CONTEXT: Fleet telematics grid — Ananthapur pilot status categories
 // ============================================================================
 
 'use client';
@@ -8,20 +8,22 @@
 import React, { useMemo, useState } from 'react';
 import {
   FLEET_ROSTER,
+  statusLabel,
   statusTone,
   type FleetDriverStatus,
   type FleetUnit,
 } from '@/data/fleetRoster';
 
-const FILTERS: { id: 'ALL' | FleetDriverStatus; label: string }[] = [
+const FILTERS: { id: 'ALL' | FleetDriverStatus; label: string; emoji?: string }[] = [
   { id: 'ALL', label: 'All' },
-  { id: 'AVAILABLE', label: 'Available' },
-  { id: 'EN_ROUTE', label: 'En route' },
-  { id: 'ON_SCENE', label: 'On scene' },
-  { id: 'OFFLINE', label: 'Offline' },
+  { id: 'AVAILABLE', label: 'Available', emoji: '🟢' },
+  { id: 'EN_ROUTE', label: 'En Route', emoji: '🔵' },
+  { id: 'ON_SCENE', label: 'On Scene', emoji: '🟡' },
+  { id: 'TRANSPORTING', label: '→ ER', emoji: '🔴' },
 ];
 
 interface FleetManagementSidebarProps {
+  units?: FleetUnit[];
   selectedFleetId: string | null;
   onAssign: (unit: FleetUnit) => void;
   onClearAssignment?: () => void;
@@ -30,6 +32,7 @@ interface FleetManagementSidebarProps {
 }
 
 export const FleetManagementSidebar: React.FC<FleetManagementSidebarProps> = ({
+  units: unitsProp,
   selectedFleetId,
   onAssign,
   onClearAssignment,
@@ -38,44 +41,67 @@ export const FleetManagementSidebar: React.FC<FleetManagementSidebarProps> = ({
 }) => {
   const [filter, setFilter] = useState<'ALL' | FleetDriverStatus>('ALL');
   const [alsOnly, setAlsOnly] = useState(false);
+  const roster = unitsProp ?? FLEET_ROSTER;
 
   const units = useMemo(() => {
-    return FLEET_ROSTER.filter((u) => {
+    return roster.filter((u) => {
       if (filter !== 'ALL' && u.status !== filter) return false;
       if (alsOnly && !u.alsCapable) return false;
       return true;
     }).sort((a, b) => {
       const rank = (s: FleetDriverStatus) =>
-        ({ AVAILABLE: 0, EN_ROUTE: 1, ON_SCENE: 2, RETURNING: 3, OFFLINE: 4 })[s];
+        ({
+          AVAILABLE: 0,
+          EN_ROUTE: 1,
+          ON_SCENE: 2,
+          TRANSPORTING: 3,
+          RETURNING: 4,
+          OFFLINE: 5,
+        })[s];
       return rank(a.status) - rank(b.status) || a.hospitalDistanceKm - b.hospitalDistanceKm;
     });
-  }, [filter, alsOnly]);
+  }, [filter, alsOnly, roster]);
 
-  const availableCount = FLEET_ROSTER.filter((u) => u.status === 'AVAILABLE').length;
+  const counts = useMemo(
+    () => ({
+      available: roster.filter((u) => u.status === 'AVAILABLE').length,
+      enRoute: roster.filter((u) => u.status === 'EN_ROUTE').length,
+      onScene: roster.filter((u) => u.status === 'ON_SCENE').length,
+      transporting: roster.filter((u) => u.status === 'TRANSPORTING').length,
+    }),
+    [roster],
+  );
 
   return (
-    <aside className="w-full max-w-[340px] shrink-0 border-l border-black/5 bg-white/90 backdrop-blur-xl flex flex-col h-full min-h-0 shadow-[0_10px_30px_rgba(0,0,0,0.03)]">
+    <aside className="w-full max-w-[320px] shrink-0 border-l border-black/5 bg-white/90 backdrop-blur-xl flex flex-col h-full min-h-0 shadow-[0_10px_30px_rgba(0,0,0,0.04)]">
       <div className="px-4 py-3 border-b border-black/5">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-black tracking-widest text-[#1C1C1E]">FLEET MANAGEMENT</h2>
-          <span className="text-[10px] font-mono text-[#34C759] bg-[#34C759]/10 px-2 py-0.5 rounded-full">
-            {availableCount} FREE
+        <h2 className="font-serif text-xl text-[#1C1C1E]">Fleet Telematics</h2>
+        <p className="text-xs text-[#6B6B70] mt-0.5">Vehicle status · Ananthapur pilot</p>
+        <div className="mt-2 grid grid-cols-2 gap-1.5 text-[10px] font-mono-ops">
+          <span className="rounded-full bg-[#0D5C4D]/10 text-[#0D5C4D] px-2 py-1">
+            🟢 {counts.available} Available
+          </span>
+          <span className="rounded-full bg-[#2563EB]/10 text-[#2563EB] px-2 py-1">
+            🔵 {counts.enRoute} En Route
+          </span>
+          <span className="rounded-full bg-[#D97706]/10 text-[#D97706] px-2 py-1">
+            🟡 {counts.onScene} On Scene
+          </span>
+          <span className="rounded-full bg-[#DC2626]/10 text-[#DC2626] px-2 py-1">
+            🔴 {counts.transporting} → ER
           </span>
         </div>
-        <p className="text-xs text-[#8E8E93] mt-1">
-          Active ambulances · driver status · hospital distance
-        </p>
       </div>
 
       {assignedForCase && (
-        <div className="mx-3 mt-3 rounded-2xl border border-[#FF2D55]/25 bg-[#FF2D55]/8 px-3 py-2 text-xs">
-          <div className="font-bold text-[#FF2D55]">Assigned to case</div>
-          <div className="font-mono text-[#1C1C1E] mt-0.5 tabular-nums">{assignedForCase}</div>
+        <div className="mx-3 mt-3 rounded-2xl border border-[#0D5C4D]/25 bg-[#0D5C4D]/8 px-3 py-2 text-xs">
+          <div className="font-bold text-[#0D5C4D]">Assigned to case</div>
+          <div className="font-mono-ops text-[#1C1C1E] mt-0.5">{assignedForCase}</div>
           {onClearAssignment && (
             <button
               type="button"
               onClick={onClearAssignment}
-              className="mt-2 text-[11px] text-[#8E8E93] underline hover:text-[#1C1C1E]"
+              className="mt-2 text-[11px] text-[#6B6B70] underline hover:text-[#1C1C1E]"
             >
               Clear assignment
             </button>
@@ -89,22 +115,23 @@ export const FleetManagementSidebar: React.FC<FleetManagementSidebarProps> = ({
             key={f.id}
             type="button"
             onClick={() => setFilter(f.id)}
-            className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
+            className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ios-press ${
               filter === f.id
-                ? 'bg-[#007AFF] border-[#007AFF] text-white'
-                : 'bg-[#F2F2F7] border-transparent text-[#8E8E93] hover:text-[#1C1C1E]'
+                ? 'bg-[#0D5C4D] border-[#0D5C4D] text-white'
+                : 'bg-[#FDFBF7] border-transparent text-[#6B6B70] hover:text-[#1C1C1E]'
             }`}
           >
+            {f.emoji ? `${f.emoji} ` : ''}
             {f.label}
           </button>
         ))}
         <button
           type="button"
           onClick={() => setAlsOnly((v) => !v)}
-          className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
+          className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ios-press ${
             alsOnly
-              ? 'bg-[#34C759] border-[#34C759] text-white'
-              : 'bg-[#F2F2F7] border-transparent text-[#8E8E93]'
+              ? 'bg-[#0D5C4D] border-[#0D5C4D] text-white'
+              : 'bg-[#FDFBF7] border-transparent text-[#6B6B70]'
           }`}
         >
           ALS only
@@ -112,8 +139,8 @@ export const FleetManagementSidebar: React.FC<FleetManagementSidebarProps> = ({
       </div>
 
       {!hasActiveSos && (
-        <div className="mx-3 mt-2 text-[11px] text-[#8E8E93] bg-[#F2F2F7] border border-black/5 rounded-2xl px-2 py-1.5">
-          Select a unit now — it will auto-attach when you mobilize an SOS.
+        <div className="mx-3 mt-2 text-[11px] text-[#6B6B70] bg-[#FDFBF7] border border-black/5 rounded-2xl px-2 py-1.5">
+          Select a unit — it attaches when you mobilize an SOS.
         </div>
       )}
 
@@ -127,17 +154,15 @@ export const FleetManagementSidebar: React.FC<FleetManagementSidebarProps> = ({
               key={unit.fleetId}
               className={`rounded-3xl border p-3 transition-colors ${
                 selected
-                  ? 'border-[#FF2D55]/40 bg-[#FF2D55]/6'
-                  : 'border-black/5 bg-white hover:border-[#007AFF]/30'
+                  ? 'border-[#0D5C4D]/40 bg-[#0D5C4D]/6'
+                  : 'border-black/5 bg-white hover:border-[#0D5C4D]/30'
               }`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <div className="font-mono text-sm font-bold text-[#1C1C1E] tabular-nums">
-                    {unit.fleetId}
-                  </div>
-                  <div className="text-[11px] text-[#8E8E93]">
-                    {unit.callSign} · {unit.vehicle}
+                  <div className="font-mono-ops text-sm font-bold text-[#1C1C1E]">{unit.fleetId}</div>
+                  <div className="text-[11px] text-[#6B6B70]">
+                    {unit.vehicleReg} · {unit.vehicle}
                   </div>
                 </div>
                 <span
@@ -145,34 +170,36 @@ export const FleetManagementSidebar: React.FC<FleetManagementSidebarProps> = ({
                     unit.status,
                   )}`}
                 >
-                  {unit.status.replace('_', ' ')}
+                  {statusLabel(unit.status)}
                 </span>
               </div>
 
-              <div className="mt-2 text-xs text-[#8E8E93]">
+              <div className="mt-2 text-xs text-[#6B6B70]">
                 <div>
                   Driver: <span className="text-[#1C1C1E] font-semibold">{unit.driver}</span>
                 </div>
-                <div className="text-[#8E8E93] font-mono text-[10px]">{unit.driverPhone}</div>
+                <div className="font-mono-ops text-[10px]">
+                  {unit.station} · {unit.speedKmh} km/h · HDG {unit.headingDeg}°
+                </div>
               </div>
 
               <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
-                <div className="rounded-2xl bg-[#F2F2F7] border border-black/5 px-2 py-1.5">
-                  <div className="text-[#8E8E93] uppercase tracking-wide text-[9px]">Hospital</div>
+                <div className="rounded-2xl bg-[#FDFBF7] border border-black/5 px-2 py-1.5">
+                  <div className="text-[#6B6B70] uppercase tracking-wide text-[9px]">Hospital</div>
                   <div className="text-[#1C1C1E] font-semibold leading-tight">{unit.hospitalName}</div>
                 </div>
-                <div className="rounded-2xl bg-[#F2F2F7] border border-black/5 px-2 py-1.5">
-                  <div className="text-[#8E8E93] uppercase tracking-wide text-[9px]">Distance</div>
-                  <div className="text-[#FF9500] font-bold tabular-nums">
+                <div className="rounded-2xl bg-[#FDFBF7] border border-black/5 px-2 py-1.5">
+                  <div className="text-[#6B6B70] uppercase tracking-wide text-[9px]">Distance</div>
+                  <div className="text-[#D97706] font-bold font-mono-ops">
                     {unit.hospitalDistanceKm.toFixed(1)} km
                   </div>
-                  <div className="text-[#8E8E93] text-[10px]">ETA {unit.etaToHospitalMin} min</div>
+                  <div className="text-[#6B6B70] text-[10px]">ETA {unit.etaToHospitalMin} min</div>
                 </div>
               </div>
 
               <div className="mt-2 flex items-center gap-2">
                 {unit.alsCapable && (
-                  <span className="text-[9px] font-bold text-[#007AFF] bg-[#007AFF]/10 px-2 py-0.5 rounded-full">
+                  <span className="text-[9px] font-bold text-[#0D5C4D] bg-[#0D5C4D]/10 px-2 py-0.5 rounded-full">
                     ALS
                   </span>
                 )}
@@ -180,15 +207,15 @@ export const FleetManagementSidebar: React.FC<FleetManagementSidebarProps> = ({
                   type="button"
                   disabled={!canAssign && !selected}
                   onClick={() => onAssign(unit)}
-                  className={`ml-auto text-[11px] font-bold px-3 py-1.5 rounded-full ${
+                  className={`ml-auto text-[11px] font-bold px-3 py-1.5 rounded-full ios-press ${
                     selected
-                      ? 'bg-[#FF2D55] text-white'
+                      ? 'bg-[#0D5C4D] text-white'
                       : canAssign
-                        ? 'bg-[#007AFF] hover:bg-[#0066d6] text-white'
-                        : 'bg-[#F2F2F7] text-[#8E8E93] cursor-not-allowed'
+                        ? 'bg-[#0D5C4D] hover:brightness-110 text-white'
+                        : 'bg-[#F7F5F0] text-[#6B6B70] cursor-not-allowed'
                   }`}
                 >
-                  {selected ? 'ASSIGNED' : canAssign ? 'Assign vehicle' : 'Unavailable'}
+                  {selected ? 'ASSIGNED' : canAssign ? 'Assign' : 'Busy'}
                 </button>
               </div>
             </div>
@@ -196,7 +223,7 @@ export const FleetManagementSidebar: React.FC<FleetManagementSidebarProps> = ({
         })}
 
         {units.length === 0 && (
-          <div className="text-center text-[#8E8E93] text-xs py-8">No units match this filter.</div>
+          <div className="text-center text-[#6B6B70] text-xs py-8">No units match this filter.</div>
         )}
       </div>
     </aside>
