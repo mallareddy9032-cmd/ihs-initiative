@@ -1,10 +1,18 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import './styles.css';
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
+const rootEl = document.getElementById('root');
+if (!rootEl) {
+  throw new Error('Doctor Studio root element #root was not found in index.html');
+}
+
+ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary fallbackTitle="Doctor Studio">
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>,
 );

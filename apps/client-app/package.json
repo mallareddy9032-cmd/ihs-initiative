@@ -7,8 +7,9 @@
     "ios": "react-native run-ios",
     "ios:pods": "cd ios && pod install && cd ..",
     "start": "react-native start",
-    "web": "vite",
-    "web:build": "vite build",
+    "web": "NODE_OPTIONS=\"--max-old-space-size=1024\" vite",
+    "web:lite": "NODE_OPTIONS=\"--max-old-space-size=1024\" vite",
+    "web:build": "NODE_OPTIONS=\"--max-old-space-size=1024\" vite build",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx"
   },

@@ -42,6 +42,8 @@ export const EcgLiveCanvas: React.FC<EcgProps> = ({ caseId }) => {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     let ws: WebSocket;
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+    const WS_HEARTBEAT_MS = 15_000;
     try {
       ws = new WebSocket(wsUrl);
     } catch {
@@ -52,14 +54,22 @@ export const EcgLiveCanvas: React.FC<EcgProps> = ({ caseId }) => {
 
     ws.onopen = () => {
       setStatus('idle');
+      heartbeatTimer = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ event: 'PING', timestamp: Date.now() }));
+        }
+      }, WS_HEARTBEAT_MS);
     };
 
     ws.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data as string) as {
+          event?: string;
           service_uuid?: string;
           reading_value?: string;
         };
+
+        if (payload.event === 'PING' || payload.event === 'PONG') return;
 
         // Filter for 12-Lead ECG UUID
         if (payload.service_uuid === '0x180D' && typeof payload.reading_value === 'string') {
@@ -85,6 +95,7 @@ export const EcgLiveCanvas: React.FC<EcgProps> = ({ caseId }) => {
     };
 
     ws.onclose = () => {
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
       setStatus((prev) => (prev === 'error' ? prev : 'idle'));
     };
 
@@ -138,6 +149,7 @@ export const EcgLiveCanvas: React.FC<EcgProps> = ({ caseId }) => {
 
     return () => {
       cancelAnimationFrame(animationFrameRef.current);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
       ws.close();
     };
   }, [caseId]);

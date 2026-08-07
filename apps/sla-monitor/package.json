@@ -1,0 +1,24 @@
+{
+  "name": "ihs-sla-monitor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "IHS Sub-5-Min Dispatch SLA — lightweight native health monitor (port 3007)",
+  "scripts": {
+    "dev": "NODE_OPTIONS=\"--max-old-space-size=1024\" vite --port 3007 --host",
+    "dev:lite": "NODE_OPTIONS=\"--max-old-space-size=1024\" vite --port 3007 --host",
+    "build": "tsc -b && vite build",
+    "preview": "NODE_OPTIONS=\"--max-old-space-size=1024\" vite preview --port 3007",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.1.6",
+    "vite": "^5.4.11"
+  }
+}

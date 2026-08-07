@@ -13,6 +13,7 @@ export interface SimulationStep {
 
 const DEFAULT_WS = 'ws://localhost:8080/v1/admin/stream';
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+const WS_HEARTBEAT_MS = 15_000;
 
 export function useAdminSocket() {
   const [connectionState, setConnectionState] = useState<ConnState>('connecting');
@@ -24,8 +25,26 @@ export function useAdminSocket() {
   const [simDone, setSimDone] = useState(false);
   const attemptRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
 
   const url = import.meta.env.VITE_WS_ADMIN_URL || DEFAULT_WS;
+
+  const clearHeartbeat = () => {
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+  };
+
+  const startHeartbeat = (ws: WebSocket) => {
+    clearHeartbeat();
+    heartbeatRef.current = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ event: 'PING', timestamp: Date.now() }));
+      }
+    }, WS_HEARTBEAT_MS);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -47,15 +66,18 @@ export function useAdminSocket() {
     const connect = () => {
       if (cancelled) return;
       if (timerRef.current) clearTimeout(timerRef.current);
+      clearHeartbeat();
       setConnectionState(attemptRef.current > 0 ? 'reconnecting' : 'connecting');
 
       const ws = new WebSocket(url);
+      socketRef.current = ws;
 
       ws.onopen = () => {
         if (cancelled) return;
         attemptRef.current = 0;
         setConnectionState('open');
         setError(null);
+        startHeartbeat(ws);
       };
 
       ws.onmessage = (event) => {
@@ -65,6 +87,7 @@ export function useAdminSocket() {
             event?: string;
             payload?: ExecutiveSnapshot | SimulationStep | Record<string, unknown>;
           };
+          if (msg.event === 'PING' || msg.event === 'PONG') return;
           if (msg.event === 'EXECUTIVE_SNAPSHOT' && msg.payload) {
             setSnapshot(msg.payload as ExecutiveSnapshot);
           }
@@ -102,6 +125,8 @@ export function useAdminSocket() {
       };
 
       ws.onclose = () => {
+        clearHeartbeat();
+        socketRef.current = null;
         if (cancelled || intentional) {
           setConnectionState('closed');
           return;
@@ -120,7 +145,9 @@ export function useAdminSocket() {
       cancelled = true;
       intentional = true;
       if (timerRef.current) clearTimeout(timerRef.current);
+      clearHeartbeat();
       clearInterval(poll);
+      socketRef.current?.close();
     };
   }, [url]);
 

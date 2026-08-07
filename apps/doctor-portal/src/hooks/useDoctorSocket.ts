@@ -4,6 +4,8 @@ import type { Appointment } from '../types';
 
 type ConnectionState = 'connecting' | 'live' | 'offline';
 
+const WS_HEARTBEAT_MS = 15_000;
+
 interface DoctorSocketState {
   connectionState: ConnectionState;
   appointments: Appointment[];
@@ -14,11 +16,14 @@ interface DoctorSocketState {
 }
 
 function upsertAppointment(list: Appointment[], apt: Appointment): Appointment[] {
+  const safeIso = (value?: string) => value || '';
   const idx = list.findIndex((a) => a.id === apt.id);
-  if (idx === -1) return [apt, ...list].sort((a, b) => a.when_iso.localeCompare(b.when_iso));
+  if (idx === -1) {
+    return [apt, ...list].sort((a, b) => safeIso(a.when_iso).localeCompare(safeIso(b.when_iso)));
+  }
   const next = list.slice();
-  next[idx] = apt;
-  return next.sort((a, b) => a.when_iso.localeCompare(b.when_iso));
+  next[idx] = { ...next[idx], ...apt };
+  return next.sort((a, b) => safeIso(a.when_iso).localeCompare(safeIso(b.when_iso)));
 }
 
 export function useDoctorSocket(enabled: boolean): DoctorSocketState {
@@ -29,6 +34,7 @@ export function useDoctorSocket(enabled: boolean): DoctorSocketState {
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef(0);
   const timerRef = useRef<number | null>(null);
+  const heartbeatRef = useRef<number | null>(null);
 
   const clearRetry = useCallback(() => {
     if (timerRef.current != null) {
@@ -37,8 +43,16 @@ export function useDoctorSocket(enabled: boolean): DoctorSocketState {
     }
   }, []);
 
+  const clearHeartbeat = useCallback(() => {
+    if (heartbeatRef.current != null) {
+      window.clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     if (!enabled) {
+      clearHeartbeat();
       wsRef.current?.close();
       wsRef.current = null;
       setConnectionState('offline');
@@ -48,15 +62,35 @@ export function useDoctorSocket(enabled: boolean): DoctorSocketState {
 
     let cancelled = false;
 
+    const startHeartbeat = (ws: WebSocket) => {
+      clearHeartbeat();
+      heartbeatRef.current = window.setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ event: 'PING', timestamp: Date.now() }));
+        }
+      }, WS_HEARTBEAT_MS);
+    };
+
     const connect = () => {
       if (cancelled) return;
+      clearHeartbeat();
       setConnectionState('connecting');
-      const ws = new WebSocket(`${WS_BASE}/v1/doctor/stream`);
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(`${WS_BASE}/v1/doctor/stream`);
+      } catch {
+        setConnectionState('offline');
+        const delay = Math.min(8000, 800 * 2 ** retryRef.current);
+        retryRef.current += 1;
+        timerRef.current = window.setTimeout(connect, delay);
+        return;
+      }
       wsRef.current = ws;
 
       ws.onopen = () => {
         retryRef.current = 0;
         setConnectionState('live');
+        startHeartbeat(ws);
       };
 
       ws.onmessage = (ev) => {
@@ -66,12 +100,22 @@ export function useDoctorSocket(enabled: boolean): DoctorSocketState {
             payload?: Appointment | Appointment[] | { appointments?: Appointment[]; message?: string };
           };
           const event = msg.event || '';
+          if (event === 'PING' || event === 'PONG') return;
           setLastEvent(event);
 
           if (event === 'DOCTOR_CONNECTED') {
             const payload = msg.payload as { appointments?: Appointment[] };
             if (payload?.appointments?.length) {
-              setAppointments(payload.appointments);
+              const normalized = payload.appointments
+                .filter((a) => a && a.id)
+                .map((a) => ({
+                  ...a,
+                  when_iso: a.when_iso || new Date().toISOString(),
+                  patient_name: a.patient_name || 'Patient',
+                  ihs_uid: a.ihs_uid || 'UNKNOWN',
+                  status: a.status || 'queued',
+                }));
+              if (normalized.length) setAppointments(normalized);
             }
             return;
           }
@@ -100,6 +144,7 @@ export function useDoctorSocket(enabled: boolean): DoctorSocketState {
       };
 
       ws.onclose = () => {
+        clearHeartbeat();
         setConnectionState('offline');
         if (cancelled) return;
         const delay = Math.min(8000, 800 * 2 ** retryRef.current);
@@ -117,10 +162,11 @@ export function useDoctorSocket(enabled: boolean): DoctorSocketState {
     return () => {
       cancelled = true;
       clearRetry();
+      clearHeartbeat();
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [enabled, clearRetry]);
+  }, [enabled, clearRetry, clearHeartbeat]);
 
   useEffect(() => {
     if (!toast) return;

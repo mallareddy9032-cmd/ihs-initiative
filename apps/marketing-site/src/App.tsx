@@ -1,90 +1,105 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { GeospatialRadar, PILOT_LOCATIONS } from './GeospatialRadar';
+import { LiveImpactConsole } from './LiveImpactConsole';
+import { CareAdvantageTable } from './CareAdvantageTable';
 
 const PHONE_DISPLAY = '+91 9032600410';
 const PHONE_TEL = 'tel:+919032600410';
 const WHATSAPP =
   'https://wa.me/919032600410?text=Hello%20IHS%20Initiative,%20I%20would%20like%20to%20book%20care%20in%20the%20Ananthapuramu%20pilot%20zone.';
 const EMAILS = ['bsc.consulting123@gmail.com', 'contact@IHSGlobalservices.com'] as const;
-const PATIENT_VAULT = 'http://localhost:3000';
+const PATIENT_VAULT =
+  import.meta.env.VITE_PATIENT_VAULT_URL?.trim() || 'http://localhost:3000';
+
+const SOCIAL_PLACEHOLDERS = [
+  {
+    id: 'linkedin',
+    label: 'LinkedIn',
+    title: 'IHS Initiative on LinkedIn — profile provisioning',
+  },
+  {
+    id: 'facebook',
+    label: 'Facebook',
+    title: 'IHS Initiative on Facebook — profile provisioning',
+  },
+  {
+    id: 'instagram',
+    label: 'Instagram',
+    title: 'IHS Initiative on Instagram — profile provisioning',
+  },
+] as const;
 
 const NAV = [
   { id: 'features', label: 'Features' },
   { id: 'care', label: 'Synchronized Care' },
   { id: 'pilot', label: 'Pilot Zone' },
   { id: 'roi', label: 'ROI' },
+  { id: 'advantage', label: 'Advantage' },
   { id: 'faqs', label: 'FAQs' },
   { id: 'contact', label: 'Contact' },
-] as const;
-
-const PORTALS = [
-  { label: 'Patient Concierge', href: 'http://localhost:3000' },
-  { label: 'Command Center', href: 'http://localhost:3001' },
-  { label: 'Fleet Driver', href: 'http://localhost:3002' },
-  { label: 'Trauma ER', href: 'http://localhost:3003' },
-  { label: 'Executive Analytics', href: 'http://localhost:3004' },
-  { label: 'Doctor Studio', href: 'http://localhost:3005' },
 ] as const;
 
 const CARE_NODES = [
   {
     id: 'sos',
-    color: '#0D5C4D',
+    orbit: 'inner' as const,
+    angle: 0,
+    icon: '🚨',
+    short: 'SOS',
+    color: '#DC2626',
     title: '1-Tap Emergency SOS & Vault',
-    desc: 'Instant GPS & medical history sync',
+    desc: 'Instant GPS telemetry & encrypted health history sync.',
   },
   {
     id: 'fleet',
-    color: '#2B6CB0',
+    orbit: 'inner' as const,
+    angle: 120,
+    icon: '🛰️',
+    short: 'Dispatch',
+    color: '#0D5C4D',
     title: '24/7 Smart GPS Fleet Dispatch',
-    desc: 'Locates nearest active ALS ambulance',
+    desc: 'Locates and locks the nearest active ALS ambulance.',
   },
   {
     id: 'nav',
-    color: '#6B46C1',
+    orbit: 'inner' as const,
+    angle: 240,
+    icon: '🚑',
+    short: 'ALS',
+    color: '#6366F1',
     title: 'Live ALS Ambulance Navigation',
-    desc: 'Turn-by-turn routing to your doorstep',
+    desc: 'Turn-by-turn paramedic routing to patient doorstep.',
   },
   {
     id: 'er',
-    color: '#C53030',
-    title: 'Pre-Arrival ER & Trauma Bay Booking',
-    desc: 'Reserves hospital bed before arrival',
+    orbit: 'outer' as const,
+    angle: 40,
+    icon: '🏥',
+    short: 'ER',
+    color: '#0284C7',
+    title: 'Pre-Arrival ER & Trauma Bay',
+    desc: 'Reserves hospital bed and streams vitals before arrival.',
   },
   {
     id: 'ops',
-    color: '#B7791F',
-    title: 'Regional Grid Operations Center',
-    desc: '24/7 safety oversight across Ananthapur region',
+    orbit: 'outer' as const,
+    angle: 160,
+    icon: '📊',
+    short: 'Ops',
+    color: '#D97706',
+    title: 'Regional Grid Operations',
+    desc: '24/7 safety oversight & SLA compliance monitoring.',
   },
   {
     id: 'gp',
-    color: '#0D5C4D',
-    title: 'Verified Doctor & E-Prescription Sync',
-    desc: 'Doorstep GP visits & teleconsults',
+    orbit: 'outer' as const,
+    angle: 280,
+    icon: '🩺',
+    short: 'Doctor',
+    color: '#10B981',
+    title: 'Verified Doctor & E-Rx Sync',
+    desc: 'Doorstep GP visits & instant teleconsultations.',
   },
-] as const;
-
-const PILOT_LOCATIONS = [
-  'Ananthapur Urban',
-  'Ananthapur Rural',
-  'Raptadu',
-  'B.K. Samudram',
-  'Garladinne',
-  'Kudair',
-  'Atmakur',
-  'Singanamala',
-  'Narpala',
-  'Bathalapalle',
-  'Dharmavaram',
-  'Chennekothapalle',
-  'Kanakal',
-  'Uravakonda',
-  'Pamidi',
-  'Gooty',
-  'Peddavadugur',
-  'Putluru',
-  'Beluguppa',
-  'Bukkarayasamudram',
 ] as const;
 
 const FAQ_CHIPS = [
@@ -106,7 +121,7 @@ const FAQ_CHIPS = [
   },
   {
     q: 'Is my family medical vault encrypted?',
-    a: 'Yes. Health Vault records use 256-bit SHA-256 encryption in transit and at rest, access-scoped by IHS UID. Only authenticated care teams on an active case can view relevant clinical context.',
+    a: 'Yes. Health Vault records use AES-256 encryption at rest and TLS 1.3 in transit, with integrity hashing (SHA-256) and access scoped by IHS UID. Only authenticated care teams on an active case can view relevant clinical context.',
   },
 ] as const;
 
@@ -150,65 +165,150 @@ function GooglePlayBadge({ onClick }: { onClick: () => void }) {
   );
 }
 
+function SocialIcon({ id }: { id: (typeof SOCIAL_PLACEHOLDERS)[number]['id'] }) {
+  if (id === 'linkedin') {
+    return (
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        <path
+          fill="currentColor"
+          d="M6.94 6.5A1.94 1.94 0 1 1 3.06 6.5a1.94 1.94 0 0 1 3.88 0ZM4 9.25h2.9V20H4V9.25Zm5.35 0H12.1v1.46h.04c.4-.76 1.38-1.56 2.84-1.56 3.04 0 3.6 2 3.6 4.6V20H15.7v-5.2c0-1.24-.02-2.84-1.73-2.84-1.74 0-2 1.35-2 2.75V20H9.35V9.25Z"
+        />
+      </svg>
+    );
+  }
+  if (id === 'facebook') {
+    return (
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        <path
+          fill="currentColor"
+          d="M13.5 20v-6.2h2.08l.31-2.4H13.5V9.86c0-.7.2-1.17 1.22-1.17h1.3V6.54c-.22-.03-.99-.1-1.88-.1-1.86 0-3.14 1.13-3.14 3.21v1.79H8.7v2.4h2.3V20h2.5Z"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M12 7.8a4.2 4.2 0 1 0 0 8.4 4.2 4.2 0 0 0 0-8.4Zm0 6.93a2.73 2.73 0 1 1 0-5.46 2.73 2.73 0 0 1 0 5.46Zm5.36-7.1a.98.98 0 1 1-1.96 0 .98.98 0 0 1 1.96 0Zm2.78 1a4.74 4.74 0 0 0-1.29-3.36 4.78 4.78 0 0 0-3.36-1.3c-1.32-.07-5.28-.07-6.6 0a4.76 4.76 0 0 0-3.36 1.3A4.74 4.74 0 0 0 3.86 8.63c-.08 1.32-.08 5.28 0 6.6a4.74 4.74 0 0 0 1.3 3.36 4.78 4.78 0 0 0 3.36 1.29c1.32.08 5.28.08 6.6 0a4.74 4.74 0 0 0 3.36-1.3 4.78 4.78 0 0 0 1.29-3.35c.08-1.32.08-5.28 0-6.6Zm-1.75 8.01a2.79 2.79 0 0 1-1.57 1.57c-1.09.43-3.67.33-4.87.33s-3.79.09-4.87-.33a2.79 2.79 0 0 1-1.57-1.57c-.43-1.09-.33-3.67-.33-4.87s-.09-3.79.33-4.87a2.79 2.79 0 0 1 1.57-1.57c1.09-.43 3.67-.33 4.87-.33s3.79-.09 4.87.33a2.79 2.79 0 0 1 1.57 1.57c.43 1.09.33 3.67.33 4.87s.1 3.78-.33 4.87Z"
+      />
+    </svg>
+  );
+}
+
 function CareMeshDiagram() {
-  const positions = [
-    { x: 18, y: 22 },
-    { x: 82, y: 22 },
-    { x: 92, y: 55 },
-    { x: 72, y: 86 },
-    { x: 28, y: 86 },
-    { x: 8, y: 55 },
-  ];
-  const cx = 50;
-  const cy = 52;
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const paused = activeId !== null;
+  const innerNodes = CARE_NODES.filter((n) => n.orbit === 'inner');
+  const outerNodes = CARE_NODES.filter((n) => n.orbit === 'outer');
 
   return (
-    <div className="card mesh-card" id="features">
-      <svg className="mesh-svg" viewBox="0 0 100 100" role="img" aria-label="IHS synchronized care mesh">
-        <defs>
-          <linearGradient id="coreGrad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#0D5C4D" />
-            <stop offset="100%" stopColor="#1A7A66" />
-          </linearGradient>
-        </defs>
-        {CARE_NODES.map((node, i) => {
-          const p = positions[i]!;
-          const mx = (cx + p.x) / 2 + (i % 2 === 0 ? -6 : 6);
-          const my = (cy + p.y) / 2 + (i % 3 === 0 ? 5 : -4);
-          return (
-            <path
-              key={`line-${node.id}`}
-              d={`M ${cx} ${cy} Q ${mx} ${my} ${p.x} ${p.y}`}
-              fill="none"
-              stroke={node.color}
-              strokeWidth="0.55"
-              strokeOpacity="0.35"
+    <div className={`orbit-shell card${paused ? ' is-paused' : ''}`} id="features">
+      <div
+        className="orbit-canvas"
+        role="group"
+        aria-label="IHS synchronized core with six orbiting ecosystem nodes"
+      >
+        <div className="orbit-pulse" aria-hidden="true" />
+        <div className="orbit-pulse orbit-pulse-delay" aria-hidden="true" />
+
+        <div className="orbit-track orbit-track-inner" aria-hidden="true" />
+        <div className="orbit-track orbit-track-outer" aria-hidden="true" />
+
+        <div className={`orbit-ring orbit-ring-inner${paused ? ' is-paused' : ''}`}>
+          {innerNodes.map((node) => (
+            <OrbitSpoke
+              key={node.id}
+              node={node}
+              active={activeId === node.id}
+              onActivate={() => setActiveId(node.id)}
+              onDeactivate={() => setActiveId((id) => (id === node.id ? null : id))}
             />
-          );
-        })}
-        <circle cx={cx} cy={cy} r="11" fill="url(#coreGrad)" />
-        <circle cx={cx} cy={cy} r="11" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="0.4" />
-        <text x={cx} y={cy - 1.5} textAnchor="middle" className="mesh-core-title">
-          IHS
-        </text>
-        <text x={cx} y={cy + 3.2} textAnchor="middle" className="mesh-core-sub">
-          Synchronized Core
-        </text>
-        {CARE_NODES.map((node, i) => {
-          const p = positions[i]!;
-          return <circle key={`dot-${node.id}`} cx={p.x} cy={p.y} r="2.2" fill={node.color} />;
-        })}
-      </svg>
-      <div className="mesh-nodes">
+          ))}
+        </div>
+
+        <div className={`orbit-ring orbit-ring-outer${paused ? ' is-paused' : ''}`}>
+          {outerNodes.map((node) => (
+            <OrbitSpoke
+              key={node.id}
+              node={node}
+              active={activeId === node.id}
+              onActivate={() => setActiveId(node.id)}
+              onDeactivate={() => setActiveId((id) => (id === node.id ? null : id))}
+            />
+          ))}
+        </div>
+
+        <div className="orbit-core">
+          <strong>IHS</strong>
+          <span>Synchronized Core</span>
+        </div>
+      </div>
+
+      <div className="orbit-cards">
         {CARE_NODES.map((node) => (
-          <article key={node.id} className="mesh-node">
-            <span className="mesh-dot" style={{ background: node.color }} />
-            <div>
+          <article
+            key={node.id}
+            className={`orbit-card${activeId === node.id ? ' is-active' : ''}`}
+            style={{ ['--accent' as string]: node.color }}
+            onMouseEnter={() => setActiveId(node.id)}
+            onMouseLeave={() => setActiveId((id) => (id === node.id ? null : id))}
+            onFocus={() => setActiveId(node.id)}
+            onBlur={() => setActiveId((id) => (id === node.id ? null : id))}
+            tabIndex={0}
+          >
+            <div className="orbit-card-head">
+              <span className="orbit-card-icon" aria-hidden="true">
+                {node.icon}
+              </span>
+              <span className="orbit-card-dot" style={{ background: node.color }} />
               <strong>{node.title}</strong>
-              <p>{node.desc}</p>
             </div>
+            <p>{node.desc}</p>
           </article>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function OrbitSpoke({
+  node,
+  active,
+  onActivate,
+  onDeactivate,
+}: {
+  node: (typeof CARE_NODES)[number];
+  active: boolean;
+  onActivate: () => void;
+  onDeactivate: () => void;
+}) {
+  return (
+    <div
+      className={`orbit-spoke${active ? ' is-active' : ''}`}
+      style={{
+        ['--angle' as string]: `${node.angle}deg`,
+        ['--accent' as string]: node.color,
+      }}
+    >
+      <span className="orbit-beam" aria-hidden="true" />
+      <div className="orbit-sat-spin">
+        <button
+          type="button"
+          className={`orbit-sat${active ? ' is-active' : ''}`}
+          style={{ ['--accent' as string]: node.color }}
+          aria-label={node.title}
+          aria-pressed={active}
+          onMouseEnter={onActivate}
+          onMouseLeave={onDeactivate}
+          onFocus={onActivate}
+          onBlur={onDeactivate}
+        >
+          <span className="orbit-sat-icon" aria-hidden="true">
+            {node.icon}
+          </span>
+          <span className="orbit-sat-label">{node.short}</span>
+        </button>
       </div>
     </div>
   );
@@ -218,25 +318,56 @@ export default function App() {
   const [faqOpen, setFaqOpen] = useState<number | null>(null);
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [formSent, setFormSent] = useState(false);
+  const [requestId, setRequestId] = useState<string | null>(null);
   const [service, setService] = useState('Home Doctor Visit');
-  const [location, setLocation] = useState<string>(PILOT_LOCATIONS[0]);
+  const [location, setLocation] = useState<string>(PILOT_LOCATIONS[0] ?? 'Ananthapur Urban');
+  const [contactPhone, setContactPhone] = useState('');
+  const [phoneError, setPhoneError] = useState<string | null>(null);
   const year = useMemo(() => new Date().getFullYear(), []);
-  const sidebarRef = useRef<HTMLElement | null>(null);
+  const faqCloseRef = useRef<HTMLButtonElement | null>(null);
+  const downloadCloseRef = useRef<HTMLButtonElement | null>(null);
+  const activeFaq = faqOpen !== null ? FAQ_CHIPS[faqOpen] : undefined;
 
   useEffect(() => {
-    if (faqOpen === null) return;
+    if (faqOpen === null && !downloadOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setFaqOpen(null);
+      if (e.key !== 'Escape') return;
+      if (faqOpen !== null) setFaqOpen(null);
+      if (downloadOpen) setDownloadOpen(false);
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
+  }, [faqOpen, downloadOpen]);
+
+  useEffect(() => {
+    if (faqOpen === null) return;
+    faqCloseRef.current?.focus();
   }, [faqOpen]);
+
+  useEffect(() => {
+    if (!downloadOpen) return;
+    downloadCloseRef.current?.focus();
+  }, [downloadOpen]);
 
   const onRequest = (e: FormEvent) => {
     e.preventDefault();
+    const digits = contactPhone.replace(/\D/g, '').slice(-10);
+    if (digits.length !== 10) {
+      setPhoneError('Enter a valid 10-digit Indian mobile number.');
+      return;
+    }
+    setPhoneError(null);
+    const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+    const ref = `IHS-REQ-2026-${suffix}`;
+    setRequestId(ref);
     setFormSent(true);
     const msg = encodeURIComponent(
-      `Hello IHS Initiative — Appointment request:%0AService: ${service}%0ALocation: ${location}%0APilot Zone: Ananthapuramu`,
+      `Hello IHS Initiative — Pilot triage request\n` +
+        `Ref: ${ref}\n` +
+        `Service: ${service}\n` +
+        `Location: ${location}\n` +
+        `WhatsApp/Contact: +91 ${digits}\n` +
+        `Pilot Zone: Ananthapuramu 50km`,
     );
     window.open(`https://wa.me/919032600410?text=${msg}`, '_blank', 'noreferrer');
   };
@@ -280,37 +411,40 @@ export default function App() {
         <section className="hero">
           <div className="container hero-grid">
             <div className="hero-copy">
-              <span className="pill-tag">Your Family&apos;s Dedicated Emergency &amp; Home Care Partner</span>
-              <h1>Hospital-Grade Healthcare, Delivered Right to Your Doorstep.</h1>
+              <span className="pill-tag">
+                ⚡ India&apos;s First Sub-300s Synchronized Emergency &amp; Care Grid
+              </span>
+              <h1>When Every Second Counts, An Entire Medical Grid Responds.</h1>
               <p className="hero-lead">
-                Sub-5-minute emergency dispatches, qualified doctor home visits, and centralized
-                health vaults across Ananthapuramu &amp; Sri Sathya Sai pilot zones.
+                Unifying 1-tap SOS panic triggers, real-time GPS fleet dispatch, streaming hospital ER
+                pre-arrival vitals, and doorstep MBBS doctor visits across the Ananthapuramu 50km
+                pilot corridor.
               </p>
               <div className="hero-ctas">
                 <a className="btn btn-primary btn-lg ios-press" href="#contact">
-                  Book Doctor Visit Now
+                  Request Doorstep GP
                 </a>
                 <a className="btn btn-outline btn-lg ios-press" href={WHATSAPP} target="_blank" rel="noreferrer">
-                  💬 WhatsApp Us
+                  Chat with Triage Desk
                 </a>
               </div>
             </div>
 
             <div className="hero-stage" aria-hidden="true">
               <div className="float-badge badge-tl">
-                🛡️ Certified MBBS Doctors · Verified Home Care
+                🛡️ Encrypted Vault · 24/7 Verified MBBS Tele-Triage
               </div>
               <div className="phone-frame">
                 <div className="phone-glass" />
                 <div className="phone-notch" />
                 <div className="phone-screen">
                   <div className="mock-bar">
-                    <strong>IHS Vault</strong>
+                    <strong>IHS Lifeline · Ananthapur Sector</strong>
                     <span className="sos-pill">SOS</span>
                   </div>
                   <div className="mock-vital">
-                    <strong>Heart Rate 72</strong>
-                    <span>SpO₂ 98% · Family Vault</span>
+                    <strong>🟢 Unit AP-02-EX-2214 En Route · ETA 03:40 Mins</strong>
+                    <span>Live ALS dispatch · Ananthapuramu pilot</span>
                   </div>
                   <div className="mock-tiles">
                     <div>SOS</div>
@@ -320,11 +454,13 @@ export default function App() {
                   </div>
                   <div className="mock-eta">
                     <span>Nearest ALS</span>
-                    <strong>ETA 04:18</strong>
+                    <strong>ETA 03:40</strong>
                   </div>
                 </div>
               </div>
-              <div className="float-badge badge-br">⚡ 1-Tap SOS Active · Sub-5 Min Target</div>
+              <div className="float-badge badge-br">
+                📡 Live ALS Dispatch Locked · Target ETA &lt; 04:30m
+              </div>
             </div>
           </div>
         </section>
@@ -336,35 +472,23 @@ export default function App() {
               {/* Care Mesh */}
               <article className="block" id="care">
                 <p className="kicker">Synchronized Care</p>
-                <h2>How One Tap Mobilizes an Entire Healthcare Network in Seconds.</h2>
+                <h2>How One Tap Mobilizes an Entire Healthcare Network in Seconds</h2>
                 <p className="lede">
-                  From panic to coordinated response—six patient-facing nodes orbit the IHS
-                  Synchronized Core across the Ananthapuramu pilot.
+                  From critical alert to synchronized response—six specialized ecosystem nodes orbit
+                  the IHS Core across the Ananthapuramu 50km pilot grid.
                 </p>
                 <CareMeshDiagram />
               </article>
 
-              {/* Pilot Zone */}
+              {/* Pilot Zone — Geospatial Intelligence Radar */}
               <article className="block" id="pilot">
                 <p className="kicker">Pilot Zone</p>
-                <h2>Synchronized Emergency Coverage Within 50km Radius of Ananthapur.</h2>
+                <h2>IHS Real-Time Emergency Command: 50km Pilot Grid</h2>
                 <p className="lede">
-                  Twenty active dispatch nodes across Ananthapuramu &amp; Sri Sathya Sai districts—live
-                  readiness for SOS and doorstep care.
+                  Visualizing live readiness across 20 tactical nodes in Ananthapuramu &amp; Sri
+                  Sathya Sai districts. Interact to inspect unit availability and response ETAs.
                 </p>
-                <div className="card pilot-card">
-                  <div className="pilot-meta">
-                    <span className="pulse-dot" />
-                    <span>ACTIVE · 50KM RADIUS · ANANTHAPURAMU</span>
-                  </div>
-                  <div className="location-grid">
-                    {PILOT_LOCATIONS.map((loc) => (
-                      <span key={loc} className="loc-chip">
-                        {loc}
-                      </span>
-                    ))}
-                  </div>
-                </div>
+                <GeospatialRadar />
               </article>
 
               {/* Journey */}
@@ -401,6 +525,8 @@ export default function App() {
                       key={item.q}
                       type="button"
                       className="thought-chip ios-press"
+                      aria-haspopup="dialog"
+                      aria-expanded={faqOpen === idx}
                       onClick={() => setFaqOpen(idx)}
                     >
                       💬 {item.q}
@@ -409,62 +535,26 @@ export default function App() {
                 </div>
               </article>
 
-              {/* Golden Hour / ROI */}
+              {/* Live Impact Console / ROI */}
               <article className="block" id="roi">
-                <p className="kicker">Golden Hour · ROI</p>
-                <h2>From Panic Queue to On-Scene in Minutes.</h2>
-                <div className="card timeline-card">
-                  <div className="timeline-row">
-                    <div className="timeline-label">
-                      <span className="tag muted">Legacy</span>
-                      <strong>Fragmented delay</strong>
-                    </div>
-                    <div className="timeline-track">
-                      <div className="t-node">
-                        <span>Min 0</span>
-                        <i />
-                        <b>Panic</b>
-                      </div>
-                      <hr />
-                      <div className="t-node">
-                        <span>Min 8</span>
-                        <i />
-                        <b>Call Queue</b>
-                      </div>
-                      <hr />
-                      <div className="t-node">
-                        <span>Min 18+</span>
-                        <i />
-                        <b>Arrival</b>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="timeline-row ihs">
-                    <div className="timeline-label">
-                      <span className="tag green">IHS Grid</span>
-                      <strong>4.3-min target</strong>
-                    </div>
-                    <div className="timeline-track">
-                      <div className="t-node accent">
-                        <span>Min 0</span>
-                        <i />
-                        <b>1-Tap</b>
-                      </div>
-                      <hr className="accent" />
-                      <div className="t-node accent">
-                        <span>Min 1</span>
-                        <i />
-                        <b>Auto-Dispatch</b>
-                      </div>
-                      <hr className="accent" />
-                      <div className="t-node accent highlight">
-                        <span>Min 4.3</span>
-                        <i />
-                        <b>On-Scene ⚡</b>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <p className="kicker">ROI · Impact</p>
+                <h2>Live Impact Console</h2>
+                <p className="lede">
+                  Real-time operational signal across response speed, SLA uptime, clinical sync
+                  volume, and logistics efficiency for the Ananthapuramu pilot grid.
+                </p>
+                <LiveImpactConsole />
+              </article>
+
+              {/* Care Advantage — public comparison (replaces internal portal directory) */}
+              <article className="block" id="advantage">
+                <p className="kicker">Care Advantage</p>
+                <h2>The IHS Care Advantage: Legacy vs. Synchronized Grid</h2>
+                <p className="lede">
+                  Why institutional synchronization outperforms fragmented traditional healthcare in
+                  semi-urban corridors.
+                </p>
+                <CareAdvantageTable />
               </article>
 
               {/* MLC */}
@@ -480,27 +570,51 @@ export default function App() {
                 </div>
               </article>
 
-              {/* Trust Band */}
-              <article className="block trust-band-wrap">
-                <div className="card trust-band">
-                  <div className="trust-item">
-                    <strong>Aarogyasri / PM-JAY</strong>
-                    <span>Auto-verification readiness</span>
+              {/* Live Operational Telemetry Bar */}
+              <section className="block telemetry-wrap" aria-label="Live operational telemetry">
+                <div className="telemetry-bar">
+                  <div className="telemetry-metric">
+                    <span className="telemetry-status" aria-hidden="true">
+                      <i className="telemetry-pulse" />
+                    </span>
+                    <div>
+                      <strong>Active Nodes</strong>
+                      <span>20 / 20 Operational</span>
+                    </div>
                   </div>
-                  <div className="trust-item">
-                    <strong>ABDHM / NDHM</strong>
-                    <span>Digital Health Record compliance</span>
+                  <div className="telemetry-metric">
+                    <span className="telemetry-icon" aria-hidden="true">
+                      📡
+                    </span>
+                    <div>
+                      <strong>Telemetry Sync</strong>
+                      <span>&lt; 120ms Latency</span>
+                    </div>
                   </div>
-                  <div className="trust-item">
-                    <strong>256-Bit SHA-256</strong>
-                    <span>Encrypted family vaults</span>
+                  <div className="telemetry-metric">
+                    <span className="telemetry-icon" aria-hidden="true">
+                      🚑
+                    </span>
+                    <div>
+                      <strong>Fleet Readiness</strong>
+                      <span>14 ALS Units on Standby</span>
+                    </div>
+                  </div>
+                  <div className="telemetry-metric">
+                    <span className="telemetry-icon" aria-hidden="true">
+                      ⚡
+                    </span>
+                    <div>
+                      <strong>Avg Response</strong>
+                      <span>03:42m (Ananthapur Sector)</span>
+                    </div>
                   </div>
                 </div>
-              </article>
+              </section>
             </div>
 
             {/* Sticky sidebar */}
-            <aside className="sticky-col" ref={sidebarRef} id="contact">
+            <aside className="sticky-col" id="contact">
               <div className="sidebar-widget">
                 <p className="sidebar-kicker">24/7 Direct Helpline</p>
                 <a className="btn btn-primary sidebar-btn ios-press" href={PHONE_TEL}>
@@ -519,27 +633,74 @@ export default function App() {
                 </a>
 
                 <form className="appt-form" onSubmit={onRequest}>
-                  <h3>Quick Appointment Request</h3>
+                  <div className="appt-form-head">
+                    <h3>Contact &amp; Consultation Booking</h3>
+                    <p className="appt-live-status" role="status">
+                      🟢 Triage Desk Online · Average Response &lt; 2 Minutes
+                    </p>
+                  </div>
                   <label>
                     Select Service
-                    <select value={service} onChange={(e) => setService(e.target.value)}>
+                    <select value={service} onChange={(e) => setService(e.target.value)} required>
                       <option>Home Doctor Visit</option>
-                      <option>SOS</option>
-                      <option>Teleconsult</option>
+                      <option>Emergency Dispatch Inquiry</option>
+                      <option>Corporate / Institutional Pilot</option>
+                      <option>Patient Vault Support</option>
                     </select>
                   </label>
                   <label>
-                    Select Ananthapur Location
-                    <select value={location} onChange={(e) => setLocation(e.target.value)}>
+                    Pilot Node Location
+                    <select value={location} onChange={(e) => setLocation(e.target.value)} required>
                       {PILOT_LOCATIONS.map((loc) => (
-                        <option key={loc}>{loc}</option>
+                        <option key={loc} value={loc}>
+                          {loc}
+                        </option>
                       ))}
                     </select>
                   </label>
-                  <button type="submit" className="btn btn-primary sidebar-btn ios-press">
-                    Instant Request
+                  <label>
+                    Contact Number / WhatsApp
+                    <div className={`phone-field${phoneError ? ' has-error' : ''}`}>
+                      <span className="phone-cc" aria-hidden="true">
+                        +91
+                      </span>
+                      <input
+                        type="tel"
+                        inputMode="numeric"
+                        autoComplete="tel-national"
+                        placeholder="90326 00410"
+                        maxLength={12}
+                        value={contactPhone}
+                        onChange={(e) => {
+                          setPhoneError(null);
+                          setContactPhone(e.target.value.replace(/[^\d\s]/g, '').slice(0, 12));
+                        }}
+                        required
+                        aria-invalid={phoneError ? true : undefined}
+                        aria-describedby={phoneError ? 'phone-error' : undefined}
+                        aria-label="Indian mobile number"
+                      />
+                    </div>
+                    {phoneError ? (
+                      <span id="phone-error" className="field-error" role="alert">
+                        {phoneError}
+                      </span>
+                    ) : null}
+                  </label>
+                  <button type="submit" className="btn-triage-submit sidebar-btn">
+                    Submit Triage Request
                   </button>
-                  {formSent && <p className="form-note">Opening WhatsApp with your request…</p>}
+                  {formSent && requestId ? (
+                    <div className="form-confirm" role="status">
+                      <strong>Request encrypted &amp; queued</strong>
+                      <span>
+                        Reference ID: <code>{requestId}</code>
+                      </span>
+                      <span className="form-confirm-hint">
+                        WhatsApp opened for triage desk confirmation. Keep this ID for follow-up.
+                      </span>
+                    </div>
+                  ) : null}
                 </form>
 
                 <div className="sidebar-meta">
@@ -572,6 +733,24 @@ export default function App() {
               <AppStoreBadge onClick={() => setDownloadOpen(true)} />
               <GooglePlayBadge onClick={() => setDownloadOpen(true)} />
             </div>
+            <div className="footer-social" aria-label="Social profiles (provisioning)">
+              <p className="footer-social-label">Follow IHS</p>
+              <div className="footer-social-row">
+                {SOCIAL_PLACEHOLDERS.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    className="social-squircle"
+                    title={s.title}
+                    aria-label={`${s.label} — profile coming soon`}
+                    aria-disabled="true"
+                    disabled
+                  >
+                    <SocialIcon id={s.id} />
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div>
@@ -590,38 +769,60 @@ export default function App() {
           </div>
 
           <div>
-            <h4>Portal Directory</h4>
-            <div className="portal-dir">
-              {PORTALS.map((p) => (
-                <a key={p.href} href={p.href} className="ios-press">
-                  {p.label}
-                  <span>Launch →</span>
-                </a>
-              ))}
+            <h4>Patient Care</h4>
+            <p className="footer-care-copy">
+              1-Tap SOS, doorstep MBBS visits, tele-triage, and an encrypted Family Health Vault —
+              synchronized across the Ananthapuramu 50km pilot corridor.
+            </p>
+            <div className="footer-care-actions">
+              <a className="btn btn-outline ios-press" href="#advantage">
+                See Care Advantage →
+              </a>
+              <a className="btn btn-ghost ios-press footer-care-micro" href={WHATSAPP} target="_blank" rel="noreferrer">
+                WhatsApp Concierge
+              </a>
+              <a className="btn btn-ghost ios-press footer-care-micro" href={PHONE_TEL}>
+                Call Triage Desk
+              </a>
             </div>
           </div>
         </div>
         <div className="container footer-bottom">
           <span>© {year} IHS Initiative. All rights reserved.</span>
-          <span>Ananthapuramu Pilot · Granola × Nuraform Editorial</span>
+          <span>Ananthapuramu Pilot · Doorstep Care Gateway</span>
         </div>
       </footer>
 
-      {faqOpen !== null && (
-        <div className="modal-root" role="dialog" aria-modal="true">
+      {activeFaq ? (
+        <div
+          className="modal-root"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="faq-dialog-title"
+        >
           <button type="button" className="modal-backdrop" aria-label="Close" onClick={() => setFaqOpen(null)} />
           <div className="modal">
-            <h3>{FAQ_CHIPS[faqOpen]!.q}</h3>
-            <p>{FAQ_CHIPS[faqOpen]!.a}</p>
-            <button type="button" className="btn btn-primary ios-press" onClick={() => setFaqOpen(null)}>
+            <h3 id="faq-dialog-title">{activeFaq.q}</h3>
+            <p>{activeFaq.a}</p>
+            <button
+              type="button"
+              ref={faqCloseRef}
+              className="btn btn-primary ios-press"
+              onClick={() => setFaqOpen(null)}
+            >
               Got it
             </button>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {downloadOpen && (
-        <div className="modal-root" role="dialog" aria-modal="true">
+      {downloadOpen ? (
+        <div
+          className="modal-root"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="download-dialog-title"
+        >
           <button
             type="button"
             className="modal-backdrop"
@@ -629,20 +830,25 @@ export default function App() {
             onClick={() => setDownloadOpen(false)}
           />
           <div className="modal">
-            <h3>Download Mobile App</h3>
+            <h3 id="download-dialog-title">Download Mobile App</h3>
             <p>Scan the QR, or continue in the web Patient Vault while store listings finalize.</p>
             <div className="qr-box" aria-hidden="true" />
             <div className="hero-ctas">
               <a className="btn btn-primary ios-press" href={PATIENT_VAULT}>
                 Open Web Vault
               </a>
-              <button type="button" className="btn btn-outline ios-press" onClick={() => setDownloadOpen(false)}>
+              <button
+                type="button"
+                ref={downloadCloseRef}
+                className="btn btn-outline ios-press"
+                onClick={() => setDownloadOpen(false)}
+              >
                 Close
               </button>
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

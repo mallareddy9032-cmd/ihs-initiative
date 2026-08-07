@@ -7,7 +7,7 @@ import cron from 'node-cron';
 import crypto from 'crypto';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { ihsDbClient } from '../infrastructure/database/client';
-import { generateSha256 } from '../utils/crypto';
+import { AuditLedgerService } from '../services/AuditLedgerService';
 
 const s3 = new S3Client({ region: process.env.AWS_REGION || 'ap-south-2' });
 const GLACIER_BUCKET = process.env.GLACIER_BUCKET || 'ihs-antp-cold-vault-wrm';
@@ -94,14 +94,11 @@ export class DataComplianceDaemon {
           glacier_uri: objectKey,
         };
 
-        await ihsDbClient.auditLog.create({
-          data: {
-            ihs_uid: 'SYSTEM',
-            event_type: 'GLACIER_COLD_MIGRATION',
-            actor_id: '00000000-0000-0000-0000-000000000000',
-            cryptographic_hash: generateSha256(JSON.stringify(auditPayload)),
-            immutable_payload: JSON.stringify(auditPayload),
-          },
+        await AuditLedgerService.append({
+          ihs_uid: 'SYSTEM',
+          event_type: 'GLACIER_COLD_MIGRATION',
+          actor_id: '00000000-0000-0000-0000-000000000000',
+          payload: auditPayload,
         });
 
         migratedCount += 1;

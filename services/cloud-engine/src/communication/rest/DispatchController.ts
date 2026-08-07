@@ -10,6 +10,7 @@ import { CaseStateController } from '../../core/fsm/CaseStateController';
 import { JwtEngine } from '../../utils/jwt';
 import { DriverController } from '../websockets/DriverController';
 import { calculateHaversineDistance } from '../../utils/geo';
+import { StateEmergencyRedirectService } from '../../services/StateEmergencyRedirectService';
 
 /** Default ALS unit staging near Prakasam Nagar (matches portal roster). */
 const FLEET_STAGING: Record<string, { lat: number; lng: number; driver: string; hospital: string }> =
@@ -230,7 +231,172 @@ export class DispatchController {
         message: 'DISPATCH AUTHORIZED',
       });
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'INTERNAL_SERVER_ERROR';
+      if (message.includes('MLC_STATUTORY_REDIRECT')) {
+        const redirect = StateEmergencyRedirectService.kickStatutoryRedirect({
+          caseId: String(req.body?.case_id || 'UNKNOWN'),
+          ihsUid: String(req.body?.ihs_uid || 'UNKNOWN'),
+          reason: 'DISPATCH_BLOCKED_MLC',
+          actorId: readOperator(req)?.ihs_uid || 'DISPATCHER',
+        });
+        return res.status(451).json({
+          error: 'MLC_STATUTORY_REDIRECT',
+          message:
+            'Medico-legal case — IHS fleet dispatch blocked. Patch to State 108 / 112 immediately.',
+          statutory: redirect.tel,
+          dial_hints: redirect.dial_hints,
+          script: redirect.script,
+        });
+      }
       console.error('dispatchFleet failed', error);
+      return res.status(500).json({
+        error: message,
+      });
+    }
+  }
+
+  /**
+   * POST /v1/fsm/safe-harbor-mlc
+   * Global MLC override — kicks 108/112 without waiting on engine side-effects.
+   */
+  static async triggerSafeHarbor(req: Request, res: Response) {
+    try {
+      const operator = readOperator(req);
+      const caseId = String(req.body?.case_id || '').trim();
+      if (!caseId) {
+        return res.status(400).json({ error: 'MISSING_CASE_ID' });
+      }
+      const actorId = operator?.ihs_uid || operator?.internal_id || 'SYSTEM';
+
+      if (isDemoMode()) {
+        const result = DemoStore.triggerSafeHarborMlc(caseId, actorId);
+        return res.status(200).json({
+          success: true,
+          case_id: caseId,
+          status: 'SAFE_HARBOR_MLC',
+          statutory: result.redirect.tel,
+          dial_hints: result.redirect.dial_hints,
+          script: result.redirect.script,
+          channels: result.redirect.channels,
+          message: 'STATUTORY 108/112 REDIRECT KICKED',
+        });
+      }
+
+      const result = await CaseStateController.triggerSafeHarborMlc(caseId, actorId);
+      return res.status(200).json({
+        success: true,
+        case_id: caseId,
+        status: 'SAFE_HARBOR_MLC',
+        statutory: result.redirect.tel,
+        dial_hints: result.redirect.dial_hints,
+        script: result.redirect.script,
+        channels: result.redirect.channels,
+        message: 'STATUTORY 108/112 REDIRECT KICKED',
+      });
+    } catch (error) {
+      console.error('triggerSafeHarbor failed', error);
+      return res.status(500).json({
+        error: error instanceof Error ? error.message : 'INTERNAL_SERVER_ERROR',
+      });
+    }
+  }
+
+  /**
+   * POST /v1/fsm/mlc-screening
+   * Pre-dispatch MLC matrix YES → hard-lock fleet + immediate 108/112 redirect payload.
+   * Does not await webhook/SMS completion.
+   */
+  static async mlcScreeningRedirect(req: Request, res: Response) {
+    try {
+      const operator = readOperator(req);
+      const {
+        case_id,
+        ihs_uid,
+        patient_name,
+        chief_complaint,
+        live_gps,
+        create_case,
+      } = req.body as {
+        case_id?: string;
+        ihs_uid?: string;
+        patient_name?: string;
+        chief_complaint?: string;
+        live_gps?: { lat: number; lng: number };
+        create_case?: boolean;
+      };
+
+      let caseId = case_id;
+      let redirect = null as ReturnType<
+        typeof StateEmergencyRedirectService.kickStatutoryRedirect
+      > | null;
+
+      if (isDemoMode() && !caseId && (create_case || ihs_uid)) {
+        const patient =
+          (ihs_uid && DemoStore.findPatientByUid(String(ihs_uid).toUpperCase())) ||
+          DemoStore.findPatientByUid('IHS-ADMIN-00001');
+        if (patient) {
+          // Force MLC complaint so createPanicCase auto-kicks 108/112 once
+          const created = DemoStore.createPanicCase(patient.internal_id, {
+            chief_complaint: chief_complaint || 'MLC screening — assault / RTA / poisoning',
+            live_lat: live_gps?.lat,
+            live_lng: live_gps?.lng,
+          });
+          caseId = created.case_id;
+          if (!created.is_mlc) {
+            redirect = DemoStore.triggerSafeHarborMlc(
+              created.case_id,
+              operator?.ihs_uid || 'DISPATCHER',
+            ).redirect;
+          } else {
+            // Already kicked inside createPanicCase — return dial payload without re-SMS
+            redirect = {
+              kicked: true as const,
+              channels: { webhook_108: 'skipped' as const, sms_112: 'skipped' as const },
+              dial_hints: ['tel:108', 'tel:112'],
+              tel: { primary: '108', secondary: '112' },
+              script:
+                'Sir/Madam, based on your symptoms, we are required by law to transfer this call to the State 108 / 112 Emergency Service. Please stay on the line — I am patching you through now.',
+            };
+          }
+        }
+      } else if (isDemoMode() && caseId) {
+        redirect = DemoStore.triggerSafeHarborMlc(
+          caseId,
+          operator?.ihs_uid || 'DISPATCHER',
+        ).redirect;
+      } else if (caseId) {
+        redirect = (
+          await CaseStateController.triggerSafeHarborMlc(
+            caseId,
+            operator?.ihs_uid || 'DISPATCHER',
+          )
+        ).redirect;
+      }
+
+      if (!redirect) {
+        redirect = StateEmergencyRedirectService.kickStatutoryRedirect({
+          caseId: caseId || `screen-${Date.now()}`,
+          ihsUid: ihs_uid || 'UNKNOWN',
+          patientName: patient_name,
+          chiefComplaint: chief_complaint || 'MLC screening positive',
+          liveGps: live_gps,
+          actorId: operator?.ihs_uid || 'DISPATCHER',
+          reason: 'PRE_DISPATCH_MLC_SCREENING',
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        fleet_dispatch_blocked: true,
+        case_id: caseId,
+        statutory: redirect.tel,
+        dial_hints: redirect.dial_hints,
+        script: redirect.script,
+        channels: redirect.channels,
+        message: 'MLC PROTOCOL — PATCH TO 108/112 NOW',
+      });
+    } catch (error) {
+      console.error('mlcScreeningRedirect failed', error);
       return res.status(500).json({
         error: error instanceof Error ? error.message : 'INTERNAL_SERVER_ERROR',
       });

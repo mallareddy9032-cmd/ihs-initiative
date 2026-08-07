@@ -1,0 +1,129 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: ihs_dispatch_sla
+    folder: IHS Dispatch SLA
+    interval: 1m
+    rules:
+      - uid: ihs_sub5_avg_dispatch_430
+        title: Sub-5-Min SLA — Average dispatch time exceeds 04:30
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: prometheus
+            model:
+              datasource:
+                type: prometheus
+                uid: prometheus
+              editorMode: code
+              expr: ihs_dispatch_avg_tat_seconds
+              instant: true
+              intervalMs: 1000
+              legendFormat: __auto
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 270
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              reducer: last
+              refId: B
+              type: threshold
+        noDataState: NoData
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: Average dispatch TAT exceeds 04:30 (Sub-5-Min early warning)
+          description: >-
+            Rolling average dispatch time is above 270 seconds (04:30).
+            Hard Sub-5-Min SLA is 300 seconds (05:00). Check Dispatch Command
+            and Ananthapuramu / Sri Sathya Sai fleet coverage.
+        labels:
+          severity: warning
+          sla: sub_5_min
+          pilot: ananthapuramu
+        isPaused: false
+
+      - uid: ihs_sub5_hard_breach_500
+        title: Sub-5-Min SLA — Hard breach (> 05:00)
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: prometheus
+            model:
+              datasource:
+                type: prometheus
+                uid: prometheus
+              editorMode: code
+              expr: ihs_dispatch_avg_tat_seconds
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 300
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              reducer: last
+              refId: B
+              type: threshold
+        noDataState: NoData
+        execErrState: Error
+        for: 1m
+        annotations:
+          summary: Average dispatch TAT exceeds 05:00 (Sub-5-Min hard SLA breach)
+          description: Rolling average dispatch time is above the hard 5-minute SLA. Escalate immediately.
+        labels:
+          severity: critical
+          sla: sub_5_min
+          pilot: ananthapuramu
+        isPaused: false

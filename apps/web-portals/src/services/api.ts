@@ -240,3 +240,62 @@ export const InventoryApi = {
     return response.ok;
   },
 };
+
+/** MLC / Safe Harbor — statutory 108/112 (never waits on fleet engine). */
+export const MlcApi = {
+  async screeningRedirect(input: {
+    caseId?: string;
+    ihsUid?: string;
+    patientName?: string;
+    chiefComplaint?: string;
+    liveGps?: { lat: number; lng: number };
+    createCase?: boolean;
+  }): Promise<{
+    success: boolean;
+    case_id?: string;
+    statutory?: { primary: string; secondary: string };
+    dial_hints?: string[];
+    script?: string;
+    message?: string;
+  }> {
+    const response = await fetch(`${API_BASE}/v1/fsm/mlc-screening`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        case_id: input.caseId,
+        ihs_uid: input.ihsUid,
+        patient_name: input.patientName,
+        chief_complaint: input.chiefComplaint,
+        live_gps: input.liveGps,
+        create_case: input.createCase ?? true,
+      }),
+    });
+    const body = await parseJsonSafe(response);
+    if (!response.ok) {
+      throw new Error(typeof body.error === 'string' ? body.error : 'MLC screening failed');
+    }
+    return body as {
+      success: boolean;
+      case_id?: string;
+      statutory?: { primary: string; secondary: string };
+      dial_hints?: string[];
+      script?: string;
+      message?: string;
+    };
+  },
+
+  async triggerSafeHarbor(caseId: string): Promise<Record<string, unknown>> {
+    const response = await fetch(`${API_BASE}/v1/fsm/safe-harbor-mlc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ case_id: caseId }),
+    });
+    const body = await parseJsonSafe(response);
+    if (!response.ok) {
+      throw new Error(typeof body.error === 'string' ? body.error : 'Safe Harbor failed');
+    }
+    return body;
+  },
+};

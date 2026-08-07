@@ -30,6 +30,13 @@ export interface UseWebSocketResult {
 
 const MAX_BACKOFF_MS = 15_000;
 const BASE_BACKOFF_MS = 800;
+/** Application-level ping interval — keeps idle proxies from dropping the socket. */
+const WS_HEARTBEAT_MS = 15_000;
+
+function isHeartbeatEnvelope(msg: WsEnvelope): boolean {
+  const event = String(msg.event || msg.type || '').toUpperCase();
+  return event === 'PING' || event === 'PONG';
+}
 
 export function useWebSocket(url: string | null): UseWebSocketResult {
   const [lastMessage, setLastMessage] = useState<WsEnvelope | null>(null);
@@ -42,6 +49,7 @@ export function useWebSocket(url: string | null): UseWebSocketResult {
   const socketRef = useRef<WebSocket | null>(null);
   const attemptRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const intentionalCloseRef = useRef(false);
 
   const clearReconnectTimer = () => {
@@ -49,6 +57,22 @@ export function useWebSocket(url: string | null): UseWebSocketResult {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
+  };
+
+  const clearHeartbeat = () => {
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+  };
+
+  const startHeartbeat = (ws: WebSocket) => {
+    clearHeartbeat();
+    heartbeatRef.current = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ event: 'PING', timestamp: Date.now() }));
+      }
+    }, WS_HEARTBEAT_MS);
   };
 
   useEffect(() => {
@@ -65,6 +89,7 @@ export function useWebSocket(url: string | null): UseWebSocketResult {
       if (cancelled) return;
 
       clearReconnectTimer();
+      clearHeartbeat();
       setConnectionState(attemptRef.current > 0 ? 'reconnecting' : 'connecting');
       setError(null);
 
@@ -85,12 +110,14 @@ export function useWebSocket(url: string | null): UseWebSocketResult {
         attemptRef.current = 0;
         setConnectionState('open');
         setError(null);
+        startHeartbeat(ws);
       };
 
       ws.onmessage = (event) => {
         if (cancelled) return;
         try {
           const parsed = JSON.parse(event.data as string) as WsEnvelope;
+          if (isHeartbeatEnvelope(parsed)) return;
           setLastMessage(parsed);
         } catch {
           setError('Received malformed WebSocket payload.');
@@ -105,6 +132,7 @@ export function useWebSocket(url: string | null): UseWebSocketResult {
 
       ws.onclose = () => {
         if (cancelled) return;
+        clearHeartbeat();
         socketRef.current = null;
         if (intentionalCloseRef.current) {
           setConnectionState('closed');
@@ -133,6 +161,7 @@ export function useWebSocket(url: string | null): UseWebSocketResult {
       cancelled = true;
       intentionalCloseRef.current = true;
       clearReconnectTimer();
+      clearHeartbeat();
       try {
         socketRef.current?.close();
       } catch {
@@ -151,6 +180,7 @@ export function useWebSocket(url: string | null): UseWebSocketResult {
   const reconnect = useCallback(() => {
     intentionalCloseRef.current = true;
     clearReconnectTimer();
+    clearHeartbeat();
     try {
       socketRef.current?.close();
     } catch {

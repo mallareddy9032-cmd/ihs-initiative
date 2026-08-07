@@ -4,6 +4,7 @@ import type { IncomingTransport, Vitals } from '../types';
 export type ConnState = 'connecting' | 'open' | 'reconnecting' | 'closed' | 'error';
 
 const DEFAULT_WS = 'ws://localhost:8080/v1/hospital/stream';
+const WS_HEARTBEAT_MS = 15_000;
 
 export function useHospitalSocket() {
   const [connectionState, setConnectionState] = useState<ConnState>('connecting');
@@ -12,9 +13,26 @@ export function useHospitalSocket() {
   const [error, setError] = useState<string | null>(null);
   const attemptRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
 
   const url = import.meta.env.VITE_WS_HOSPITAL_URL || DEFAULT_WS;
+
+  const clearHeartbeat = () => {
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+  };
+
+  const startHeartbeat = (ws: WebSocket) => {
+    clearHeartbeat();
+    heartbeatRef.current = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ event: 'PING', timestamp: Date.now() }));
+      }
+    }, WS_HEARTBEAT_MS);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -23,6 +41,7 @@ export function useHospitalSocket() {
     const connect = () => {
       if (cancelled) return;
       if (timerRef.current) clearTimeout(timerRef.current);
+      clearHeartbeat();
       setConnectionState(attemptRef.current > 0 ? 'reconnecting' : 'connecting');
 
       const ws = new WebSocket(url);
@@ -33,6 +52,7 @@ export function useHospitalSocket() {
         attemptRef.current = 0;
         setConnectionState('open');
         setError(null);
+        startHeartbeat(ws);
       };
 
       ws.onmessage = (event) => {
@@ -48,6 +68,8 @@ export function useHospitalSocket() {
               vitals?: Vitals;
             };
           };
+
+          if (msg.event === 'PING' || msg.event === 'PONG') return;
 
           if (msg.event === 'INCOMING_TRANSPORT' && msg.payload?.case_id) {
             const p = msg.payload;
@@ -121,6 +143,7 @@ export function useHospitalSocket() {
       };
 
       ws.onclose = () => {
+        clearHeartbeat();
         if (cancelled || intentional) {
           setConnectionState('closed');
           return;
@@ -137,6 +160,7 @@ export function useHospitalSocket() {
       cancelled = true;
       intentional = true;
       if (timerRef.current) clearTimeout(timerRef.current);
+      clearHeartbeat();
       socketRef.current?.close();
     };
   }, [url]);

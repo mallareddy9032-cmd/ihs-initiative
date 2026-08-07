@@ -65,6 +65,9 @@ export class DriverController {
           DriverController.handleStatusUpdate(payload, normalized);
           return;
         }
+        if (payload.event === 'PING' || payload.event === 'PONG') {
+          return;
+        }
         if (payload.event === 'LOCATION_TELEMETRY') {
           const gps = payload.driver_gps || {
             lat: typeof payload.lat === 'number' ? payload.lat : 17.73,

@@ -4,15 +4,17 @@
   "description": "IHS Master FSM, WebSocket Hub, and Web Portals",
   "main": "dist/server.js",
   "scripts": {
-    "dev": "ts-node --project tsconfig.server.json src/server.ts",
+    "dev": "NODE_OPTIONS=\"--max-old-space-size=1024\" ts-node --project tsconfig.server.json src/server.ts",
+    "dev:lite": "NODE_OPTIONS=\"--max-old-space-size=1024\" ts-node --project tsconfig.server.json src/server.ts",
     "build": "prisma generate && tsc --project tsconfig.server.json",
     "typecheck": "prisma generate && tsc --noEmit -p tsconfig.server.json",
-    "start": "node dist/server.js",
+    "start": "NODE_OPTIONS=\"--max-old-space-size=1024\" node dist/server.js",
     "test:ci": "jest --passWithNoTests",
     "prisma:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "ts-node --project tsconfig.server.json prisma/seed.ts",
-    "test:stress": "ts-node --project tsconfig.server.json src/scripts/stress-test.ts"
+    "test:stress": "ts-node --project tsconfig.server.json src/scripts/stress-test.ts",
+    "test:audit-chain": "ts-node --project tsconfig.server.json src/scripts/verify-audit-chain.ts"
   },
   "prisma": {
     "seed": "ts-node --project tsconfig.server.json prisma/seed.ts"
@@ -27,6 +29,7 @@
     "mapbox-gl": "^2.15.0",
     "next": "14.0.0",
     "node-cron": "^3.0.2",
+    "prom-client": "^15.1.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "twilio": "^5.13.1",

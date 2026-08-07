@@ -4,9 +4,10 @@
   "description": "IHS Command Center & Physician Console Web Portals",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3001",
-    "build": "next build",
-    "start": "next start -p 3001",
+    "dev": "NODE_OPTIONS=\"--max-old-space-size=1024\" next dev -p 3001",
+    "dev:lite": "NODE_OPTIONS=\"--max-old-space-size=1024\" next dev -p 3001",
+    "build": "NODE_OPTIONS=\"--max-old-space-size=1024\" next build",
+    "start": "NODE_OPTIONS=\"--max-old-space-size=1024\" next start -p 3001",
     "lint": "next lint",
     "test:ci": "jest --passWithNoTests",
     "typecheck": "tsc --noEmit"

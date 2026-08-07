@@ -180,11 +180,16 @@ model AuditLog {
   ihs_uid            String
   event_type         String
   actor_id           String
+  /// SHA-256 of (previous_hash + "|" + immutable_payload). Tip of unbroken chain.
   cryptographic_hash String
+  /// Prior event's cryptographic_hash, or 64 zero-hex genesis sentinel.
+  previous_hash      String   @default("0000000000000000000000000000000000000000000000000000000000000000")
   immutable_payload  String
   created_at         DateTime @default(now())
 
   @@index([ihs_uid])
+  @@index([created_at])
+  @@index([cryptographic_hash])
 }
 
 model FleetAsset {

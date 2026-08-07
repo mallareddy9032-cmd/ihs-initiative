@@ -4,7 +4,11 @@
 // ============================================================================
 
 import { ihsDbClient } from '../../infrastructure/database/client';
-import { generateSha256 } from '../../utils/crypto';
+import { AuditLedgerService } from '../../services/AuditLedgerService';
+import { DispatchSlaMetrics } from '../../infrastructure/metrics/DispatchSlaMetrics';
+import { ExecutiveAnalytics } from '../../infrastructure/analytics/ExecutiveAnalytics';
+import { StateEmergencyRedirectService } from '../../services/StateEmergencyRedirectService';
+import { WebSocketEngine } from '../../communication/websockets/WebSocketEngine';
 
 export class CaseStateController {
   static async attemptDispatch(caseId: string, patientId: string, dispatcherId: string) {
@@ -17,11 +21,6 @@ export class CaseStateController {
         return { success: false as const, requiresCoPay: true, fee: 499 };
       }
 
-      await tx.subscription.update({
-        where: { id: subscription.id },
-        data: { doorstepVisitsRemaining: { decrement: 1 } },
-      });
-
       const existingCase = await tx.clinicalCase.findUnique({
         where: { case_id: caseId },
       });
@@ -32,15 +31,27 @@ export class CaseStateController {
         );
       }
 
+      if (existingCase.is_mlc) {
+        throw new Error(
+          'MLC_STATUTORY_REDIRECT: Case is medico-legal. Patch to 108/112 — IHS fleet dispatch blocked.',
+        );
+      }
+
       if (existingCase.is_locked) {
         throw new Error(`WORM: Case ${caseId} is locked and cannot be dispatched.`);
       }
 
+      await tx.subscription.update({
+        where: { id: subscription.id },
+        data: { doorstepVisitsRemaining: { decrement: 1 } },
+      });
+
+      const tA = new Date();
       const updatedCase = await tx.clinicalCase.update({
         where: { case_id: caseId },
         data: {
           current_status: 'DISPATCHED',
-          t_a: new Date(),
+          t_a: tA,
         },
       });
 
@@ -49,20 +60,19 @@ export class CaseStateController {
         throw new Error(`CRITICAL: Patient ${patientId} not found during dispatch audit.`);
       }
 
-      const auditPayload = {
-        action: 'DISPATCH_AUTHORIZED',
-        remaining_quota: subscription.doorstepVisitsRemaining - 1,
-      };
-
-      await tx.auditLog.create({
-        data: {
+      await AuditLedgerService.append(
+        {
           ihs_uid: patient.ihsUid,
-          event_type: 'SYSTEM_ACCESS',
+          event_type: 'DISPATCH_AUTHORIZED',
           actor_id: dispatcherId,
-          cryptographic_hash: generateSha256(JSON.stringify(auditPayload)),
-          immutable_payload: JSON.stringify(auditPayload),
+          payload: {
+            action: 'DISPATCH_AUTHORIZED',
+            case_id: caseId,
+            remaining_quota: subscription.doorstepVisitsRemaining - 1,
+          },
         },
-      });
+        tx as never,
+      );
 
       await tx.emergencyIncident.upsert({
         where: { id: caseId },
@@ -80,6 +90,8 @@ export class CaseStateController {
         },
       });
 
+      ExecutiveAnalytics.noteIncidentEvent('vizag');
+
       return { success: true as const, updatedCase };
     });
   }
@@ -89,40 +101,73 @@ export class CaseStateController {
       where: { case_id: caseId },
     });
     if (currentCase?.current_status === 'DISPATCHED' && !currentCase.t_m) {
+      const tM = new Date();
       await ihsDbClient.clinicalCase.update({
         where: { case_id: caseId },
-        data: { t_m: new Date(), current_status: 'ARRIVED_ON_SCENE' },
+        data: { t_m: tM, current_status: 'ARRIVED_ON_SCENE' },
       });
+      const start =
+        (currentCase as { created_at?: Date }).created_at || currentCase.t_a || null;
+      if (start instanceof Date) {
+        DispatchSlaMetrics.observeTatSeconds((tM.getTime() - start.getTime()) / 1000, 'on_scene');
+      }
     }
   }
 
+  /**
+   * Global MLC override — statutory 108/112 is kicked fire-and-forget BEFORE
+   * any slower side effects (BLS unlock / WebRTC). Engine never awaits redirect I/O.
+   */
   static async triggerSafeHarborMlc(caseId: string, actorId: string) {
     const updatedCase = await ihsDbClient.clinicalCase.update({
       where: { case_id: caseId },
-      data: { current_status: 'SAFE_HARBOR_MLC', is_mlc: true },
+      data: { current_status: 'SAFE_HARBOR_MLC', is_mlc: true, is_locked: true },
     });
 
     const patient = await ihsDbClient.patient.findUnique({
       where: { id: updatedCase.patient_id },
     });
 
-    await ihsDbClient.auditLog.create({
-      data: {
-        ihs_uid: patient?.ihsUid || 'UNKNOWN',
-        event_type: 'MLC_SAFE_HARBOR_TRIGGERED',
-        actor_id: actorId,
-        cryptographic_hash: generateSha256(caseId),
-        immutable_payload: JSON.stringify({ caseId, action: 'SAFE_HARBOR' }),
+    const ihsUid = patient?.ihsUid || 'UNKNOWN';
+
+    // 1) Statutory redirect FIRST — synchronous kick, zero await on network
+    const redirect = StateEmergencyRedirectService.kickStatutoryRedirect({
+      caseId,
+      ihsUid,
+      actorId,
+      reason: 'SAFE_HARBOR_MLC',
+    });
+
+    await AuditLedgerService.append({
+      ihs_uid: ihsUid,
+      event_type: 'MLC_SAFE_HARBOR_TRIGGERED',
+      actor_id: actorId,
+      payload: {
+        caseId,
+        action: 'SAFE_HARBOR',
+        statutory: redirect.tel,
+        channels: redirect.channels,
       },
     });
 
-    await Promise.all([
-      CaseStateController.fireParallelState108Webhook(caseId, patient?.ihsUid || 'UNKNOWN'),
-      CaseStateController.unlockTabletBlsDrugs(caseId),
-      CaseStateController.openSilentWebRtcMonitor(caseId),
-    ]);
+    // 2) Notify Command Center immediately (local WS — no statutory wait)
+    WebSocketEngine.broadcastToDispatchers({
+      event: 'SAFE_HARBOR_MLC',
+      payload: {
+        case_id: caseId,
+        ihs_uid: ihsUid,
+        statutory: redirect.tel,
+        dial_hints: redirect.dial_hints,
+        script: redirect.script,
+        timestamp: new Date().toISOString(),
+      },
+    });
 
-    return updatedCase;
+    // 3) Local clinical side-effects — never gate 108/112
+    void CaseStateController.unlockTabletBlsDrugs(caseId);
+    void CaseStateController.openSilentWebRtcMonitor(caseId);
+
+    return { case: updatedCase, redirect };
   }
 
   static async escalateCriticalTransit(caseId: string) {
@@ -150,10 +195,6 @@ export class CaseStateController {
         },
       });
     });
-  }
-
-  private static async fireParallelState108Webhook(caseId: string, ihsUid: string) {
-    console.log(`[FSM] 108 webhook stub case=${caseId} uid=${ihsUid}`);
   }
 
   private static async unlockTabletBlsDrugs(caseId: string) {

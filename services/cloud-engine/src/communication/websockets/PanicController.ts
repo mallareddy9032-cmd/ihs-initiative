@@ -28,10 +28,18 @@ interface PanicPayload {
 
 export class PanicController {
   static handleIncomingConnection(ws: WebSocket): void {
+    WebSocketEngine.attachSocketHeartbeat(ws);
     ws.on('message', async (rawMessage: Buffer | string) => {
       try {
         const message = typeof rawMessage === 'string' ? rawMessage : rawMessage.toString('utf8');
         const payload = JSON.parse(message) as PanicPayload;
+
+        if (payload.event === 'PING' || (payload as { type?: string }).type === 'ping') {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ event: 'PONG', timestamp: Date.now() }));
+          }
+          return;
+        }
 
         if (payload.event === 'PANIC_TRIGGERED' || payload.event === 'PANIC_ALERT') {
           await PanicController.processEmergencySOS(

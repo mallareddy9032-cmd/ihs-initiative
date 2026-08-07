@@ -5,6 +5,7 @@ import { DRIVER_PROFILE } from '../types';
 export type ConnState = 'connecting' | 'open' | 'reconnecting' | 'closed' | 'error';
 
 const DEFAULT_WS = 'ws://localhost:8080/v1/driver/stream';
+const WS_HEARTBEAT_MS = 15_000;
 
 export function useDriverSocket(fleetId: string = DRIVER_PROFILE.fleetId) {
   const [connectionState, setConnectionState] = useState<ConnState>('connecting');
@@ -14,6 +15,7 @@ export function useDriverSocket(fleetId: string = DRIVER_PROFILE.fleetId) {
   const socketRef = useRef<WebSocket | null>(null);
   const attemptRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const url = `${import.meta.env.VITE_WS_DRIVER_URL || DEFAULT_WS}?fleet_id=${encodeURIComponent(
     fleetId,
@@ -26,6 +28,22 @@ export function useDriverSocket(fleetId: string = DRIVER_PROFILE.fleetId) {
     }
   };
 
+  const clearHeartbeat = () => {
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+  };
+
+  const startHeartbeat = (ws: WebSocket) => {
+    clearHeartbeat();
+    heartbeatRef.current = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ event: 'PING', timestamp: Date.now() }));
+      }
+    }, WS_HEARTBEAT_MS);
+  };
+
   useEffect(() => {
     let cancelled = false;
     let intentional = false;
@@ -33,6 +51,7 @@ export function useDriverSocket(fleetId: string = DRIVER_PROFILE.fleetId) {
     const connect = () => {
       if (cancelled) return;
       clearTimer();
+      clearHeartbeat();
       setConnectionState(attemptRef.current > 0 ? 'reconnecting' : 'connecting');
 
       let ws: WebSocket;
@@ -50,6 +69,7 @@ export function useDriverSocket(fleetId: string = DRIVER_PROFILE.fleetId) {
         attemptRef.current = 0;
         setConnectionState('open');
         setError(null);
+        startHeartbeat(ws);
       };
 
       ws.onmessage = (event) => {
@@ -60,6 +80,7 @@ export function useDriverSocket(fleetId: string = DRIVER_PROFILE.fleetId) {
             payload?: DispatchAssignment;
             error?: string;
           };
+          if (msg.event === 'PING' || msg.event === 'PONG') return;
           if (msg.error) {
             setError(msg.error);
             return;
@@ -83,6 +104,7 @@ export function useDriverSocket(fleetId: string = DRIVER_PROFILE.fleetId) {
       };
 
       ws.onclose = () => {
+        clearHeartbeat();
         if (cancelled || intentional) {
           setConnectionState('closed');
           return;
@@ -100,6 +122,7 @@ export function useDriverSocket(fleetId: string = DRIVER_PROFILE.fleetId) {
       cancelled = true;
       intentional = true;
       clearTimer();
+      clearHeartbeat();
       socketRef.current?.close();
       socketRef.current = null;
     };

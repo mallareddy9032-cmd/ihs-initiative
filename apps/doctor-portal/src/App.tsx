@@ -23,6 +23,51 @@ import {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
+function normalizeVault(raw: Partial<PatientVault> | null | undefined, fallbackUid?: string): PatientVault {
+  const base = DEMO_VAULT;
+  const vitals = Array.isArray(raw?.vitals) && raw!.vitals!.length > 0 ? raw!.vitals! : base.vitals;
+  const records = Array.isArray(raw?.records) && raw!.records!.length > 0 ? raw!.records! : base.records;
+  let allergies: string[] = base.allergies || [];
+  const rawAllergies = (raw as { allergies?: unknown } | null | undefined)?.allergies;
+  if (Array.isArray(rawAllergies) && rawAllergies.length > 0) {
+    allergies = rawAllergies.map(String);
+  } else if (typeof rawAllergies === 'string' && rawAllergies.trim()) {
+    allergies = [rawAllergies.trim()];
+  }
+  return {
+    patient: {
+      ihs_uid: raw?.patient?.ihs_uid || fallbackUid || base.patient.ihs_uid,
+      first_name: raw?.patient?.first_name || base.patient.first_name,
+      last_name: raw?.patient?.last_name || base.patient.last_name,
+    },
+    vitals,
+    records,
+    allergies,
+    capitation: raw?.capitation || base.capitation,
+  };
+}
+
+function normalizeAppointment(apt: Appointment): Appointment {
+  return {
+    ...apt,
+    id: apt.id || `apt-${Date.now()}`,
+    patient_name: apt.patient_name || 'Patient',
+    ihs_uid: apt.ihs_uid || 'UNKNOWN',
+    when_iso: apt.when_iso || new Date().toISOString(),
+    when_label: apt.when_label || 'Scheduled',
+    status: apt.status || 'queued',
+    type: apt.type || 'teleconsult',
+    title: apt.title || 'Teleconsult',
+    clinician: apt.clinician || DOCTOR_PROFILE.name,
+    capitation_status: apt.capitation_status || 'COVERED',
+  };
+}
+
+function formatAllergies(allergies: string[] | undefined): string {
+  if (!Array.isArray(allergies) || allergies.length === 0) return '';
+  return allergies.filter(Boolean).join(', ');
+}
+
 export default function App() {
   const [session, setSession] = useState<ClinicianSession | null>(null);
   const [uid, setUid] = useState('DOC-101');
@@ -34,7 +79,7 @@ export default function App() {
     useDoctorSocket(Boolean(session));
 
   const [selectedId, setSelectedId] = useState<string | null>('apt-8802');
-  const [vault, setVault] = useState<PatientVault | null>(DEMO_VAULT);
+  const [vault, setVault] = useState<PatientVault>(() => normalizeVault(DEMO_VAULT));
   const [vaultLoading, setVaultLoading] = useState(false);
   const [callState, setCallState] = useState<CallState>('idle');
   const [cameraOn, setCameraOn] = useState(true);
@@ -53,8 +98,8 @@ export default function App() {
   const [showSuggestions, setShowSuggestions] = useState(false);
 
   const queue = useMemo(() => {
-    if (appointments.length > 0) return appointments;
-    return DEMO_APPOINTMENTS;
+    const source = appointments.length > 0 ? appointments : DEMO_APPOINTMENTS;
+    return source.map(normalizeAppointment);
   }, [appointments]);
 
   const waiting = queue.filter((a) => a.status === 'queued' || a.status === 'in_consult').length;
@@ -73,41 +118,48 @@ export default function App() {
     if (!session) return;
     fetchAppointments()
       .then((list) => {
-        if (list.length) setAppointments(list);
-        else setAppointments(DEMO_APPOINTMENTS);
+        if (list.length) {
+          const normalized = list.map(normalizeAppointment);
+          setAppointments(normalized);
+          setSelectedId((prev) => {
+            if (prev && normalized.some((a) => a.id === prev)) return prev;
+            return normalized.find((a) => a.status === 'queued')?.id || normalized[0]?.id || prev;
+          });
+        } else {
+          setAppointments(DEMO_APPOINTMENTS);
+        }
       })
       .catch(() => setAppointments(DEMO_APPOINTMENTS));
   }, [session, setAppointments]);
 
   useEffect(() => {
     if (!selected) {
-      setVault(DEMO_VAULT);
+      setVault(normalizeVault(DEMO_VAULT));
+      setVaultLoading(false);
       return;
     }
     let cancelled = false;
     setVaultLoading(true);
+    // Prefer local demo vault immediately so UI never blanks while network resolves.
+    setVault(
+      normalizeVault(
+        {
+          ...DEMO_VAULT,
+          patient: {
+            ihs_uid: selected.ihs_uid,
+            first_name: selected.patient_name.split(' ')[0] || 'Patient',
+            last_name: selected.patient_name.split(' ').slice(1).join(' ') || '',
+          },
+        },
+        selected.ihs_uid,
+      ),
+    );
     fetchPatientVault(selected.ihs_uid)
       .then((v) => {
-        if (!cancelled) {
-          setVault({
-            ...v,
-            allergies: v.allergies?.length ? v.allergies : DEMO_VAULT.allergies,
-            vitals: v.vitals?.length ? v.vitals : DEMO_VAULT.vitals,
-            records: v.records?.length ? v.records : DEMO_VAULT.records,
-          });
-        }
+        if (!cancelled) setVault(normalizeVault(v, selected.ihs_uid));
       })
       .catch(() => {
-        if (!cancelled) {
-          setVault({
-            ...DEMO_VAULT,
-            patient: {
-              ihs_uid: selected.ihs_uid,
-              first_name: selected.patient_name.split(' ')[0] || 'Patient',
-              last_name: selected.patient_name.split(' ').slice(1).join(' ') || '',
-            },
-          });
-        }
+        /* keep optimistic DEMO vault — avoid blank UI on 404 */
       })
       .finally(() => {
         if (!cancelled) setVaultLoading(false);
@@ -228,8 +280,8 @@ export default function App() {
       /* local vault append */
     }
     setVault((prev) => {
-      const base = prev || DEMO_VAULT;
-      return {
+      const base = normalizeVault(prev);
+      return normalizeVault({
         ...base,
         records: [
           {
@@ -252,7 +304,7 @@ export default function App() {
           },
           ...base.records,
         ],
-      };
+      });
     });
     setToast(`⚡ E-Prescription synced → ${selected.patient_name} Vault`);
     setBusy(false);
@@ -394,17 +446,16 @@ export default function App() {
 
           {vaultLoading && <div className="empty">Syncing vault…</div>}
 
-          {vault && (
-            <>
-              {!!vault.allergies?.length && (
+          <>
+              {!!formatAllergies(vault.allergies) && (
                 <div className="allergy-badge">
-                  ⚠ Known Allergies: {vault.allergies.join(', ')}
+                  ⚠ Known Allergies: {formatAllergies(vault.allergies)}
                 </div>
               )}
 
               <div className="vital-grid">
-                {vault.vitals.map((v) => (
-                  <div key={v.id} className="vital-tile squircle">
+                {(vault.vitals || []).map((v) => (
+                  <div key={v.id || `${v.label}-${v.value}`} className="vital-tile squircle">
                     <span>{v.label}</span>
                     <strong>
                       {v.value}
@@ -416,8 +467,8 @@ export default function App() {
 
               <h3 className="subhead">Historical Consultations</h3>
               <div className="history-list">
-                {vault.records.map((r) => (
-                  <article key={r.id} className="history-item squircle">
+                {(vault.records || []).map((r) => (
+                  <article key={r.id || r.title} className="history-item squircle">
                     <div className="hist-top">
                       <strong>{r.title}</strong>
                       <span>{r.date_label}</span>
@@ -430,8 +481,7 @@ export default function App() {
                   </article>
                 ))}
               </div>
-            </>
-          )}
+          </>
 
           <h3 className="subhead">Queue</h3>
           <div className="mini-queue">

@@ -6,6 +6,13 @@
 import bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import { PrismaPersist } from '../persistence/PrismaPersist';
+import { DispatchSlaMetrics } from '../metrics/DispatchSlaMetrics';
+import {
+  isMlcComplaint,
+  StateEmergencyRedirectService,
+} from '../../services/StateEmergencyRedirectService';
+import { WebSocketEngine } from '../../communication/websockets/WebSocketEngine';
+import { AuditLedgerService } from '../../services/AuditLedgerService';
 
 export interface DemoPatient {
   internal_id: string;
@@ -36,10 +43,19 @@ export interface DemoSubscription {
 export interface DemoCase {
   case_id: string;
   patient_id: string;
-  current_status: 'INITIATED' | 'DISPATCHED' | 'CLOSED_RESOLVED' | 'ER_ADMITTED';
+  current_status:
+    | 'INITIATED'
+    | 'DISPATCHED'
+    | 'SAFE_HARBOR_MLC'
+    | 'CLOSED_RESOLVED'
+    | 'ER_ADMITTED';
   is_locked: boolean;
+  is_mlc?: boolean;
   assigned_fleet_id?: string;
+  /** ISO timestamp when panic/case was initiated (SLA clock start) */
+  initiated_at?: string;
   t_a?: string;
+  t_m?: string;
   override_reason?: string;
   live_lat?: number;
   live_lng?: number;
@@ -131,6 +147,14 @@ class DemoStoreImpl {
         home_lat: home.lat,
         home_lng: home.lng,
       },
+      {
+        internal_id: '11111111-1111-4111-8111-111111111003',
+        ihs_uid: 'IHS-8802',
+        first_name: 'Lakshmi',
+        last_name: 'R.',
+        home_lat: 14.6819,
+        home_lng: 77.6006,
+      },
     ];
 
     for (const p of patients) {
@@ -179,6 +203,19 @@ class DemoStoreImpl {
 
     this.appointments = [
       {
+        id: 'apt-8802',
+        ihs_uid: 'IHS-8802',
+        patient_name: 'Lakshmi R.',
+        type: 'teleconsult',
+        title: 'Teleconsult',
+        clinician: 'Dr. Ananya Rao',
+        when_label: 'Now · Live queue',
+        when_iso: new Date().toISOString(),
+        capitation_status: 'COVERED',
+        status: 'queued',
+        notes: 'Acute fever & follow-up review',
+      },
+      {
         id: randomUUID(),
         ihs_uid: 'IHS-ADMIN-00001',
         patient_name: 'Ramu SuperAdmin',
@@ -186,7 +223,7 @@ class DemoStoreImpl {
         title: 'Teleconsult',
         clinician: 'Dr. Ananya Rao',
         when_label: 'Today · 5:30 PM',
-        when_iso: new Date().toISOString(),
+        when_iso: new Date(Date.now() + 600000).toISOString(),
         capitation_status: 'COVERED',
         status: 'queued',
         notes: 'Fever follow-up · patient requests video consult',
@@ -220,6 +257,19 @@ class DemoStoreImpl {
     ];
 
     this.vaultRecords = [
+      {
+        id: randomUUID(),
+        ihs_uid: 'IHS-8802',
+        title: 'E-Prescription — Paracetamol 650mg',
+        category: 'Pharmacy',
+        date_label: '28 Jul 2026',
+        worm_locked: true,
+        summary: '1-0-1 After Food · 5 Days · Fever',
+        prescribed_by: 'Dr. Ananya Rao',
+        medicines: [
+          { name: 'Paracetamol 650mg', dose: '1-0-1 (After Food)', duration: '5 Days', quantity: 10 },
+        ],
+      },
       {
         id: randomUUID(),
         ihs_uid: 'IHS-ADMIN-00001',
@@ -286,6 +336,36 @@ class DemoStoreImpl {
         recorded_at: 'Yesterday · 20:40',
         source: 'Manual entry',
       },
+      {
+        id: randomUUID(),
+        ihs_uid: 'IHS-8802',
+        metric: 'hr',
+        label: 'Heart Rate',
+        value: '72',
+        unit: 'bpm',
+        recorded_at: 'Today · Live',
+        source: 'Vault sync',
+      },
+      {
+        id: randomUUID(),
+        ihs_uid: 'IHS-8802',
+        metric: 'spo2',
+        label: 'SpO₂',
+        value: '98',
+        unit: '%',
+        recorded_at: 'Today · Live',
+        source: 'Vault sync',
+      },
+      {
+        id: randomUUID(),
+        ihs_uid: 'IHS-8802',
+        metric: 'bp',
+        label: 'Blood Pressure',
+        value: '120/80',
+        unit: 'mmHg',
+        recorded_at: 'Today · Live',
+        source: 'Vault sync',
+      },
     ];
 
     // Persist seed into SQLite (Prisma) so restarts retain clinical data plane
@@ -347,18 +427,98 @@ class DemoStoreImpl {
       chief_complaint?: string;
     },
   ): DemoCase {
+    const complaint = opts?.chief_complaint ?? 'SOS Panic Trigger';
+    const mlc = isMlcComplaint(complaint);
     const clinicalCase: DemoCase = {
       case_id: randomUUID(),
       patient_id: patientId,
-      current_status: 'INITIATED',
-      is_locked: false,
+      current_status: mlc ? 'SAFE_HARBOR_MLC' : 'INITIATED',
+      is_locked: mlc,
+      is_mlc: mlc,
+      initiated_at: new Date().toISOString(),
       live_lat: opts?.live_lat,
       live_lng: opts?.live_lng,
-      chief_complaint: opts?.chief_complaint ?? 'SOS Panic Trigger',
+      chief_complaint: complaint,
     };
     this.cases.set(clinicalCase.case_id, clinicalCase);
     void PrismaPersist.saveIncident(clinicalCase);
+
+    if (mlc) {
+      const patient = this.findPatientByInternalId(patientId);
+      const redirect = StateEmergencyRedirectService.kickStatutoryRedirect({
+        caseId: clinicalCase.case_id,
+        ihsUid: patient?.ihs_uid || 'UNKNOWN',
+        patientName: patient ? `${patient.first_name} ${patient.last_name}` : undefined,
+        chiefComplaint: complaint,
+        liveGps:
+          opts?.live_lat != null && opts?.live_lng != null
+            ? { lat: opts.live_lat, lng: opts.live_lng }
+            : undefined,
+        reason: 'MLC_COMPLAINT_AUTO',
+      });
+      WebSocketEngine.broadcastToDispatchers({
+        event: 'SAFE_HARBOR_MLC',
+        payload: {
+          case_id: clinicalCase.case_id,
+          ihs_uid: patient?.ihs_uid,
+          statutory: redirect.tel,
+          dial_hints: redirect.dial_hints,
+          script: redirect.script,
+          chief_complaint: complaint,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+
     return clinicalCase;
+  }
+
+  /**
+   * Explicit Safe Harbor — statutory 108/112 kicked immediately (no engine wait).
+   */
+  triggerSafeHarborMlc(caseId: string, actorId: string = 'SYSTEM') {
+    const clinicalCase = this.cases.get(caseId);
+    if (!clinicalCase) throw new Error('CASE_NOT_FOUND');
+
+    clinicalCase.current_status = 'SAFE_HARBOR_MLC';
+    clinicalCase.is_mlc = true;
+    clinicalCase.is_locked = true;
+    void PrismaPersist.saveIncident(clinicalCase);
+
+    const patient = this.findPatientByInternalId(clinicalCase.patient_id);
+    const redirect = StateEmergencyRedirectService.kickStatutoryRedirect({
+      caseId,
+      ihsUid: patient?.ihs_uid || 'UNKNOWN',
+      actorId,
+      patientName: patient ? `${patient.first_name} ${patient.last_name}` : undefined,
+      chiefComplaint: clinicalCase.chief_complaint,
+      liveGps:
+        clinicalCase.live_lat != null && clinicalCase.live_lng != null
+          ? { lat: clinicalCase.live_lat, lng: clinicalCase.live_lng }
+          : undefined,
+      reason: 'SAFE_HARBOR_MLC',
+    });
+
+    void AuditLedgerService.append({
+      ihs_uid: patient?.ihs_uid || 'UNKNOWN',
+      event_type: 'MLC_SAFE_HARBOR_TRIGGERED',
+      actor_id: actorId,
+      payload: { caseId, action: 'SAFE_HARBOR', statutory: redirect.tel },
+    }).catch((err) => console.warn('[MLC] audit append soft-fail', err));
+
+    WebSocketEngine.broadcastToDispatchers({
+      event: 'SAFE_HARBOR_MLC',
+      payload: {
+        case_id: caseId,
+        ihs_uid: patient?.ihs_uid,
+        statutory: redirect.tel,
+        dial_hints: redirect.dial_hints,
+        script: redirect.script,
+        timestamp: new Date().toISOString(),
+      },
+    });
+
+    return { case: clinicalCase, redirect };
   }
 
   updateCaseDriverStatus(caseId: string, status: string, fleetId?: string): void {
@@ -366,6 +526,14 @@ class DemoStoreImpl {
     if (!clinicalCase) return;
     clinicalCase.driver_status = status;
     if (fleetId) clinicalCase.assigned_fleet_id = fleetId;
+    if (status === 'ON_SCENE' && !clinicalCase.t_m) {
+      clinicalCase.t_m = new Date().toISOString();
+      const startIso = clinicalCase.initiated_at || clinicalCase.t_a;
+      if (startIso) {
+        const seconds = (Date.now() - new Date(startIso).getTime()) / 1000;
+        DispatchSlaMetrics.observeTatSeconds(seconds, 'on_scene');
+      }
+    }
     if (status === 'HANDOFF_COMPLETE' && clinicalCase.current_status !== 'ER_ADMITTED') {
       clinicalCase.current_status = 'CLOSED_RESOLVED';
     }
@@ -465,6 +633,9 @@ class DemoStoreImpl {
     if (!clinicalCase || clinicalCase.patient_id !== patientId) {
       throw new Error('CASE_NOT_FOUND');
     }
+    if (clinicalCase.is_mlc || clinicalCase.current_status === 'SAFE_HARBOR_MLC') {
+      throw new Error('MLC_STATUTORY_REDIRECT');
+    }
     if (clinicalCase.current_status !== 'INITIATED') {
       throw new Error('INVALID_STATE_TRANSITION');
     }
@@ -535,6 +706,7 @@ class DemoStoreImpl {
     patient: DemoPatient;
     vitals: DemoVital[];
     records: DemoVaultRecord[];
+    allergies?: string[];
     capitation: { status: string; visits_remaining: number };
   } | null {
     const patient = this.findPatientByUid(ihsUid);
@@ -544,6 +716,7 @@ class DemoStoreImpl {
       patient,
       vitals: this.vitals.filter((v) => v.ihs_uid === patient.ihs_uid),
       records: this.vaultRecords.filter((r) => r.ihs_uid === patient.ihs_uid),
+      allergies: patient.ihs_uid === 'IHS-8802' ? ['Penicillin'] : [],
       capitation: {
         status: sub?.status ?? 'INACTIVE',
         visits_remaining: sub?.doorstep_visits_remaining ?? 0,

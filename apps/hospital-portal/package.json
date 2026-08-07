@@ -4,9 +4,10 @@
   "private": true,
   "description": "IHS Hospital ER & Trauma Bay Receiving Portal",
   "scripts": {
-    "dev": "vite --port 3003 --host",
+    "dev": "NODE_OPTIONS=\"--max-old-space-size=1024\" vite --port 3003 --host",
+    "dev:lite": "NODE_OPTIONS=\"--max-old-space-size=1024\" vite --port 3003 --host",
     "build": "tsc -b && vite build",
-    "preview": "vite preview --port 3003",
+    "preview": "NODE_OPTIONS=\"--max-old-space-size=1024\" vite preview --port 3003",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

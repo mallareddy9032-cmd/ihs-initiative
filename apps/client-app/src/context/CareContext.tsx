@@ -293,12 +293,30 @@ export const CareProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
     let attempt = 0;
+    const WS_HEARTBEAT_MS = 15_000;
+
+    const clearHeartbeat = () => {
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
+    };
 
     const connect = () => {
       if (cancelled) return;
+      clearHeartbeat();
       const ws = new WebSocket(`${ENGINE_WS}/v1/patient/stream?ihs_uid=${PATIENT_UID}`);
       wsRef.current = ws;
+
+      ws.onopen = () => {
+        heartbeatTimer = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ event: 'PING', timestamp: Date.now() }));
+          }
+        }, WS_HEARTBEAT_MS);
+      };
 
       ws.onmessage = (ev) => {
         try {
@@ -322,6 +340,7 @@ export const CareProvider: React.FC<{ children: React.ReactNode }> = ({ children
               medicines?: PrescriptionMedicine[];
             };
           };
+          if (msg.event === 'PING' || msg.event === 'PONG') return;
           if (msg.event !== 'PRESCRIPTION_ISSUED' || !msg.payload?.id) return;
           const p = msg.payload;
           const patientId = (p.patient_id || p.ihs_uid || '').toUpperCase();
@@ -361,6 +380,7 @@ export const CareProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
 
       ws.onclose = () => {
+        clearHeartbeat();
         if (cancelled) return;
         const delay = Math.min(8000, 600 * 2 ** attempt);
         attempt += 1;
@@ -372,6 +392,7 @@ export const CareProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
+      clearHeartbeat();
       wsRef.current?.close();
       wsRef.current = null;
     };

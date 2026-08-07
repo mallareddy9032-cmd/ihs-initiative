@@ -4,9 +4,10 @@
   "private": true,
   "description": "IHS Doctor & Clinician Console — teleconsult queue, vault, e-Rx",
   "scripts": {
-    "dev": "vite --port 3005 --host",
+    "dev": "NODE_OPTIONS=\"--max-old-space-size=1024\" vite --port 3005 --host",
+    "dev:lite": "NODE_OPTIONS=\"--max-old-space-size=1024\" vite --port 3005 --host",
     "build": "tsc -b && vite build",
-    "preview": "vite preview --port 3005",
+    "preview": "NODE_OPTIONS=\"--max-old-space-size=1024\" vite preview --port 3005",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

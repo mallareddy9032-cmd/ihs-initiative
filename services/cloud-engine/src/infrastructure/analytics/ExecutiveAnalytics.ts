@@ -3,6 +3,8 @@
 // CONTEXT: Regional KPI seed + live counters for SuperAdmin dashboard
 // ============================================================================
 
+import { DispatchSlaMetrics } from '../metrics/DispatchSlaMetrics';
+
 export type RegionId = 'VIZAG' | 'HYD' | 'KHAMMAM' | 'ALL';
 
 export interface RegionRow {
@@ -116,21 +118,31 @@ const fleetHealth: FleetUnitHealth[] = [
 let liveIncidentBoost = 0;
 let tatSamples = [4.0, 4.3, 4.1, 4.5, 4.2];
 let handoffSamples = [6.2, 5.8, 7.1, 6.5];
+let slaMetricsSeeded = false;
 
 function avg(nums: number[]): number {
   if (!nums.length) return 0;
   return Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 10) / 10;
 }
 
+function ensureSlaMetricsSeeded(): void {
+  if (slaMetricsSeeded) return;
+  slaMetricsSeeded = true;
+  DispatchSlaMetrics.seedFromMinuteSamples(tatSamples);
+}
+
 export class ExecutiveAnalytics {
   static noteIncidentEvent(regionHint?: string): void {
+    ensureSlaMetricsSeeded();
     liveIncidentBoost += 1;
     const region =
       regions.find((r) => r.name.toLowerCase().includes((regionHint || 'vizag').toLowerCase())) ||
       regions[0];
     region.dispatchedIncidents += 1;
-    tatSamples.push(3.8 + Math.random() * 1.4);
+    const sampleMin = 3.8 + Math.random() * 1.4;
+    tatSamples.push(sampleMin);
     if (tatSamples.length > 20) tatSamples.shift();
+    DispatchSlaMetrics.observeTatSeconds(sampleMin * 60, 'analytics');
   }
 
   static noteErIntake(): void {
@@ -148,6 +160,7 @@ export class ExecutiveAnalytics {
   }
 
   static snapshot(connectivity: ExecutiveSnapshot['connectivity']): ExecutiveSnapshot {
+    ensureSlaMetricsSeeded();
     const active = fleetHealth.filter((f) => f.status === 'ACTIVE').length;
     const standby = fleetHealth.filter((f) => f.status === 'STANDBY').length;
     const maint = fleetHealth.filter((f) => f.status === 'MAINTENANCE').length;
@@ -169,10 +182,12 @@ export class ExecutiveAnalytics {
         severity: (r.bedSaturationPct >= 95 ? 'CRITICAL' : 'WARN') as 'WARN' | 'CRITICAL',
       }));
 
+    const avgTatMin = avg(tatSamples);
+
     return {
       generated_at: new Date().toISOString(),
       kpis: {
-        avgTatMin: avg(tatSamples),
+        avgTatMin,
         tatTargetMin: 5.0,
         activeIncidents,
         fleetUtilization: {

@@ -1,0 +1,56 @@
+# IHS Sub-5-Min SLA Monitoring (Prometheus + Grafana)
+#
+# Prerequisites: cloud-engine running on host :8080 with GET /metrics
+#
+# Start:
+#   docker compose -f infra/monitoring/docker-compose.monitoring.yml up -d
+#
+# UI:
+#   Grafana    http://localhost:3007  (admin / ihs-sla)
+#   Prometheus http://localhost:9090
+#
+# Alert: Sub5MinSLA_AvgDispatchOverFourThirty
+#   Fires when ihs_dispatch_avg_tat_seconds > 270 for 2m (04:30 early warning)
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: ihs-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports:
+      - '9090:9090'
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - ihs_prom_data:/prometheus
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: ihs-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ihs-sla
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_ALERTING_ENABLED: 'true'
+      GF_UNIFIED_ALERTING_ENABLED: 'true'
+      GF_FEATURE_TOGGLES_ENABLE: alertingSimplifiedRouting
+    ports:
+      # Avoid clash with native sla-monitor on host :3007
+      - '3017:3000'
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ihs_grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  ihs_prom_data:
+  ihs_grafana_data:

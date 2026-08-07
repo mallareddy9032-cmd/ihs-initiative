@@ -1,0 +1,32 @@
+groups:
+  - name: ihs_dispatch_sla
+    interval: 30s
+    rules:
+      - alert: Sub5MinSLA_AvgDispatchOverFourThirty
+        expr: ihs_dispatch_avg_tat_seconds > 270
+        for: 2m
+        labels:
+          severity: warning
+          sla: sub_5_min
+          pilot: ananthapuramu
+        annotations:
+          summary: 'Average dispatch time exceeds 04:30 (Sub-5-Min SLA early warning)'
+          description: >-
+            Rolling average dispatch TAT is {{ $value | humanizeDuration }}
+            ({{ $value }}s). Early-warning threshold is 04:30 (270s);
+            hard Sub-5-Min SLA is 05:00 (300s). Investigate Dispatch Command
+            and Ananthapuramu / Sri Sathya Sai fleet availability.
+          runbook: 'Check /v1/admin/executive-snapshot and Dispatch Command queue depth.'
+
+      - alert: Sub5MinSLA_HardBreach
+        expr: ihs_dispatch_avg_tat_seconds > 300
+        for: 1m
+        labels:
+          severity: critical
+          sla: sub_5_min
+          pilot: ananthapuramu
+        annotations:
+          summary: 'Average dispatch time exceeds 05:00 (Sub-5-Min hard SLA breach)'
+          description: >-
+            Rolling average dispatch TAT is {{ $value }}s — above the hard
+            5-minute SLA. Escalate to on-call dispatch lead.

@@ -8,10 +8,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useWebSocket } from '@/hooks/useWebSocket';
-import { FsmEngineApi } from '@/services/api';
+import { FsmEngineApi, MlcApi } from '@/services/api';
 import { TopNav } from '@/components/ui/TopNav';
 import { FleetManagementSidebar } from '@/components/fleet/FleetManagementSidebar';
 import { FLEET_ROSTER, type FleetUnit } from '@/data/fleetRoster';
+import { MlcScreeningGate } from '@/components/dispatch/MlcScreeningGate';
 
 const MapComponent = dynamic(
   () => import('@/components/map/MapComponent').then((m) => m.MapComponent),
@@ -135,6 +136,8 @@ export default function CommandCenterDashboard() {
   const [fleetToast, setFleetToast] = useState<string | null>(null);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [auditOpen, setAuditOpen] = useState(true);
+  const [mlcClearedFor, setMlcClearedFor] = useState<string | null>(null);
+  const [mlcLocked, setMlcLocked] = useState(false);
   const [auditLog, setAuditLog] = useState<AuditEvent[]>([
     {
       id: 'seed-1',
@@ -257,6 +260,20 @@ export default function CommandCenterDashboard() {
       );
       pushAudit(`ER_INTAKE -> ${p.ihs_uid || 'Patient'} -> ${p.bay_id || 'trauma bay'}`);
     }
+    if (lastMessage?.event === 'SAFE_HARBOR_MLC') {
+      const p = lastMessage.payload as {
+        case_id?: string;
+        ihs_uid?: string;
+        statutory?: { primary?: string; secondary?: string };
+      };
+      setMlcLocked(true);
+      setQuotaAlert(
+        `MLC SAFE HARBOR — Patch to ${p.statutory?.primary || '108'} / ${p.statutory?.secondary || '112'} NOW. IHS fleet locked.`,
+      );
+      pushAudit(
+        `SAFE_HARBOR_MLC -> ${p.ihs_uid || p.case_id || 'case'} -> statutory ${p.statutory?.primary || '108'}/${p.statutory?.secondary || '112'}`,
+      );
+    }
   }, [lastMessage, pushAudit, audioEnabled]);
 
   const selectedIncident = useMemo(
@@ -303,6 +320,14 @@ export default function CommandCenterDashboard() {
 
   const handleDispatch = async () => {
     if (!selectedIncident) return;
+    if (mlcLocked || mlcClearedFor !== selectedIncident.id) {
+      setDispatchError(
+        mlcLocked
+          ? 'MLC locked — patch to 108/112. IHS fleet dispatch blocked.'
+          : 'Complete MLC screening before mobilizing IHS fleet.',
+      );
+      return;
+    }
     if (!selectedFleet) {
       setDispatchError('Assign a vehicle before mobilizing.');
       return;
@@ -355,8 +380,14 @@ export default function CommandCenterDashboard() {
       setSelectedIncidentId(null);
       setSelectedFleetId(null);
     } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Dispatch failed. Retry or escalate.';
+      if (msg.includes('MLC_STATUTORY_REDIRECT') || msg.includes('medico-legal')) {
+        setMlcLocked(true);
+        setQuotaAlert('MLC STATUTORY REDIRECT — Patch to 108/112. Fleet blocked.');
+        pushAudit(`MLC_BLOCK -> fleet dispatch rejected -> 108/112`);
+      }
       console.error('Dispatch failed', error);
-      setDispatchError(error instanceof Error ? error.message : 'Dispatch failed. Retry or escalate.');
+      setDispatchError(msg);
     } finally {
       setIsProcessing(false);
     }
@@ -572,49 +603,82 @@ export default function CommandCenterDashboard() {
 
           {selectedIncident && (
             <div className="border-t border-black/5 p-3 space-y-2 bg-[#FDFBF7]/80">
-              {selectedFleet && (
-                <div className="rounded-2xl border border-[#0D5C4D]/25 bg-[#0D5C4D]/8 px-3 py-2 text-[11px]">
-                  <span className="font-bold text-[#0D5C4D]">Ready to mobilize · </span>
-                  <span className="font-mono-ops text-[#1C1C1E]">
-                    {selectedFleet.fleetId} · {selectedFleet.driver}
-                  </span>
-                </div>
-              )}
-              {isAmberAlert && (
-                <select
-                  className="w-full bg-white border border-black/8 rounded-2xl p-2.5 text-xs"
-                  value={overrideReason}
-                  onChange={(e) => setOverrideReason(e.target.value)}
-                >
-                  <option value="">Select verification reason…</option>
-                  <option value="PHONE_VERIFIED">Patient Verified by Phone</option>
-                  <option value="KNOWN_GPS_DRIFT">Known Device GPS Drift</option>
-                  <option value="NEIGHBOR_HOUSE">Patient at neighbor&apos;s house</option>
-                </select>
-              )}
-              <button
-                type="button"
-                onClick={handleAutoAssign}
-                className="w-full bg-[#0D5C4D] text-white rounded-full py-2.5 text-xs font-bold ios-press"
-              >
-                ⚡ Auto-Assign Nearest ALS Unit
-              </button>
-              <button
-                type="button"
-                disabled={isProcessing || !selectedFleet || (isAmberAlert && !overrideReason)}
-                onClick={() => void handleDispatch()}
-                className={`w-full rounded-full py-2.5 text-xs font-bold ios-press ${
-                  isProcessing || !selectedFleet || (isAmberAlert && !overrideReason)
-                    ? 'bg-[#E8E4DC] text-[#6B6B70] cursor-not-allowed'
-                    : 'bg-white border border-[#0D5C4D]/30 text-[#0D5C4D]'
-                }`}
-              >
-                {isProcessing
-                  ? 'AUTHORIZING…'
-                  : selectedFleet
-                    ? `Mobilize ${selectedFleet.fleetId}`
-                    : 'Assign vehicle first'}
-              </button>
+              <MlcScreeningGate
+                patientLabel={`${selectedIncident.patientName} · ${selectedIncident.ihsUid}`}
+                onCleared={() => {
+                  setMlcClearedFor(selectedIncident.id);
+                  setMlcLocked(false);
+                  setFleetToast('MLC screening cleared — IHS fleet board unlocked');
+                  pushAudit(`MLC_CLEARED -> ${selectedIncident.ihsUid} -> IHS ALS permitted`);
+                }}
+                onStatutoryRedirect={({ dial108, dial112 }) => {
+                  setMlcLocked(true);
+                  setMlcClearedFor(null);
+                  setQuotaAlert(
+                    `MLC PROTOCOL — Patching to ${dial108}/${dial112}. IHS fleet hard-locked.`,
+                  );
+                  pushAudit(
+                    `MLC_SCREEN_YES -> ${selectedIncident.ihsUid} -> statutory ${dial108}/${dial112}`,
+                  );
+                  void MlcApi.screeningRedirect({
+                    caseId: selectedIncident.raw?.case_id,
+                    ihsUid: selectedIncident.ihsUid,
+                    patientName: selectedIncident.patientName,
+                    chiefComplaint: selectedIncident.chiefComplaint,
+                    liveGps: { lat: selectedIncident.lat, lng: selectedIncident.lng },
+                    createCase: !selectedIncident.raw?.case_id,
+                  }).catch((err) => {
+                    console.warn('MLC screening API', err);
+                  });
+                }}
+              />
+              {mlcClearedFor === selectedIncident.id && !mlcLocked ? (
+                <>
+                  {selectedFleet && (
+                    <div className="rounded-2xl border border-[#0D5C4D]/25 bg-[#0D5C4D]/8 px-3 py-2 text-[11px]">
+                      <span className="font-bold text-[#0D5C4D]">Ready to mobilize · </span>
+                      <span className="font-mono-ops text-[#1C1C1E]">
+                        {selectedFleet.fleetId} · {selectedFleet.driver}
+                      </span>
+                    </div>
+                  )}
+                  {isAmberAlert && (
+                    <select
+                      className="w-full bg-white border border-black/8 rounded-2xl p-2.5 text-xs"
+                      value={overrideReason}
+                      onChange={(e) => setOverrideReason(e.target.value)}
+                    >
+                      <option value="">Select verification reason…</option>
+                      <option value="PHONE_VERIFIED">Patient Verified by Phone</option>
+                      <option value="KNOWN_GPS_DRIFT">Known Device GPS Drift</option>
+                      <option value="NEIGHBOR_HOUSE">Patient at neighbor&apos;s house</option>
+                    </select>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleAutoAssign}
+                    className="w-full bg-[#0D5C4D] text-white rounded-full py-2.5 text-xs font-bold ios-press"
+                  >
+                    ⚡ Auto-Assign Nearest ALS Unit
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isProcessing || !selectedFleet || (isAmberAlert && !overrideReason)}
+                    onClick={() => void handleDispatch()}
+                    className={`w-full rounded-full py-2.5 text-xs font-bold ios-press ${
+                      isProcessing || !selectedFleet || (isAmberAlert && !overrideReason)
+                        ? 'bg-[#E8E4DC] text-[#6B6B70] cursor-not-allowed'
+                        : 'bg-white border border-[#0D5C4D]/30 text-[#0D5C4D]'
+                    }`}
+                  >
+                    {isProcessing
+                      ? 'AUTHORIZING…'
+                      : selectedFleet
+                        ? `Mobilize ${selectedFleet.fleetId}`
+                        : 'Assign vehicle first'}
+                  </button>
+                </>
+              ) : null}
               <button
                 type="button"
                 onClick={() => void injectDemoPanic()}

@@ -1,0 +1,28 @@
+# Optional PostgreSQL data plane for IHS Cloud Engine audit ledger.
+# Usage:
+#   docker compose -f docker-compose.postgres.yml up -d
+#   export DATABASE_URL="postgresql://ihs:ihs@localhost:5432/ihs_cloud_engine?schema=public"
+#   # switch prisma/schema.prisma datasource provider to "postgresql"
+#   npx prisma db push
+#   npm run test:audit-chain
+
+services:
+  ihs-postgres:
+    image: postgres:16-alpine
+    container_name: ihs-postgres
+    environment:
+      POSTGRES_USER: ihs
+      POSTGRES_PASSWORD: ihs
+      POSTGRES_DB: ihs_cloud_engine
+    ports:
+      - '5432:5432'
+    volumes:
+      - ihs_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ihs -d ihs_cloud_engine']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  ihs_pg_data:

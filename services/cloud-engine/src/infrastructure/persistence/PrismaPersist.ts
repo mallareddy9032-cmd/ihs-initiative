@@ -243,12 +243,14 @@ export class PrismaPersist {
           assigned_fleet_id: c.assigned_fleet_id,
           current_status: c.current_status,
           is_locked: c.is_locked,
+          is_mlc: Boolean((c as { is_mlc?: boolean }).is_mlc),
           t_a: c.t_a ? new Date(c.t_a) : null,
         },
         update: {
           assigned_fleet_id: c.assigned_fleet_id,
           current_status: c.current_status,
           is_locked: c.is_locked,
+          is_mlc: Boolean((c as { is_mlc?: boolean }).is_mlc),
           t_a: c.t_a ? new Date(c.t_a) : null,
         },
       });

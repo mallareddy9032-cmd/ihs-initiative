@@ -24,6 +24,7 @@ import { DemoStore, isDataPlaneReady, isDemoMode } from './infrastructure/demo/D
 import { WebSocketEngine } from './communication/websockets/WebSocketEngine';
 import { ExecutiveAnalytics } from './infrastructure/analytics/ExecutiveAnalytics';
 import { FullChainSimulator } from './services/FullChainSimulator';
+import { DispatchSlaMetrics } from './infrastructure/metrics/DispatchSlaMetrics';
 
 const PORT = Number(process.env.PORT || 8080);
 
@@ -51,6 +52,10 @@ async function bootstrap() {
       'http://127.0.0.1:3004',
       'http://localhost:3005',
       'http://127.0.0.1:3005',
+      'http://localhost:3006',
+      'http://127.0.0.1:3006',
+      'http://localhost:3007',
+      'http://127.0.0.1:3007',
       process.env.PUBLIC_PORTALS_ORIGIN || '',
     ]);
     if (origin && allowed.has(origin)) {
@@ -72,6 +77,10 @@ async function bootstrap() {
     DispatchController.mobilizationCheck(req, res),
   );
   app.post('/v1/fsm/dispatch', (req, res) => DispatchController.dispatchFleet(req, res));
+  app.post('/v1/fsm/safe-harbor-mlc', (req, res) => DispatchController.triggerSafeHarbor(req, res));
+  app.post('/v1/fsm/mlc-screening', (req, res) =>
+    DispatchController.mlcScreeningRedirect(req, res),
+  );
 
   app.get('/v1/clinical/appointments', (req, res) => ClinicalController.listAppointments(req, res));
   app.post('/v1/clinical/appointments', (req, res) => ClinicalController.queueAppointment(req, res));
@@ -265,6 +274,40 @@ async function bootstrap() {
     return res.status(200).json(snapshot);
   });
 
+  app.get('/v1/admin/audit-chain/verify', async (_req, res) => {
+    try {
+      const { AuditLedgerService } = await import('./services/AuditLedgerService');
+      const result = await AuditLedgerService.verifyChain();
+      return res.status(result.valid ? 200 : 409).json(result);
+    } catch (error) {
+      return res.status(500).json({
+        valid: false,
+        error: error instanceof Error ? error.message : 'Audit verify failed',
+      });
+    }
+  });
+
+  app.post('/v1/admin/audit-chain/append', async (req, res) => {
+    try {
+      const { AuditLedgerService } = await import('./services/AuditLedgerService');
+      const row = await AuditLedgerService.append({
+        ihs_uid: String(req.body?.ihs_uid || 'IHS-8802'),
+        event_type: String(req.body?.event_type || 'MANUAL_AUDIT'),
+        actor_id: String(req.body?.actor_id || 'SUPERADMIN'),
+        payload:
+          typeof req.body?.payload === 'object' && req.body.payload
+            ? req.body.payload
+            : { note: 'manual append' },
+      });
+      const verification = await AuditLedgerService.verifyChain();
+      return res.status(201).json({ row, verification });
+    } catch (error) {
+      return res.status(500).json({
+        error: error instanceof Error ? error.message : 'Audit append failed',
+      });
+    }
+  });
+
   /**
    * Orchestrated demo: SOS → Amber dispatch AMB-VSKP-07 → driver pipeline → Bay 3 ER intake.
    * Progress events stream on SIMULATION_PROGRESS (admin / dispatch / hospital WS).
@@ -318,6 +361,7 @@ async function bootstrap() {
         doctor_wss: '/v1/doctor/stream',
         patient_wss: '/v1/patient/stream',
         case_track_wss: '/v1/case/:caseId/track',
+        metrics: '/metrics',
       },
       dispatchers_connected: WebSocketEngine.dispatcherCount(),
       drivers_connected: WebSocketEngine.driverCount(),
@@ -325,7 +369,28 @@ async function bootstrap() {
       admins_connected: WebSocketEngine.adminCount(),
       doctors_connected: WebSocketEngine.doctorCount(),
       runtime: isDemoMode() ? 'local_in_memory' : 'database',
+      dispatch_sla: {
+        avg_tat_seconds: Math.round(DispatchSlaMetrics.currentAvgSeconds() * 10) / 10,
+        warn_threshold_seconds: 270,
+        hard_threshold_seconds: 300,
+      },
     });
+  });
+
+  app.get('/metrics', async (_req, res) => {
+    try {
+      ExecutiveAnalytics.snapshot({
+        dispatchers: WebSocketEngine.dispatcherCount(),
+        drivers: WebSocketEngine.driverCount(),
+        hospitals: WebSocketEngine.hospitalCount(),
+        admins: WebSocketEngine.adminCount(),
+      });
+      res.setHeader('Content-Type', DispatchSlaMetrics.contentType());
+      res.status(200).send(await DispatchSlaMetrics.metricsText());
+    } catch (error) {
+      console.error('[metrics] export failed', error);
+      res.status(500).send('# metrics export failed\n');
+    }
   });
 
   const server = http.createServer(app);
