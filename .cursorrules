@@ -13,7 +13,56 @@
 - **Tablet App:** Native Kotlin, Android Room (SQLite), WorkManager, BLE GATT Foreground Services.
 - **Infrastructure:** AWS EKS, RDS PostgreSQL, S3/Glacier, GitHub Actions.
 
-## CODE GENERGATION GUIDELINES
+## PHASE 2 — CONSOLIDATED WEB WORKSPACE
+Phase 2 consolidates public/clinical/ops surfaces into three Next.js applications that consume shared packages:
+
+| App | Path | Port | Responsibility |
+|-----|------|------|----------------|
+| Patient Portal | `apps/patient-portal` | 3000 | Patient self-service & encrypted Health Vault |
+| Clinical Workspace | `apps/clinical-workspace` | 3002 | Doctor consultation, triage queue, e-Rx |
+| Operations Hub | `apps/operations-hub` | 3001 | ERP, dispatch Command Center, Super Admin |
+
+### Shared packages (pnpm / npm workspaces)
+- `@ihs/types` → `packages/types` — domain types + Granola/Nuraform design tokens
+- `@ihs/auth-client` → `packages/auth-client` — UID/PIN helpers + JWT session verification (`jose`)
+- `@ihs/db` → `packages/db` — Phase 4 Prisma schema + singleton/mock data-plane client
+
+Every Phase 2/4 app MUST depend on these packages (`"workspace:*"`) and set
+`transpilePackages: ['@ihs/types', '@ihs/auth-client', '@ihs/db']`.
+
+### Phase 4 data plane
+- Schema: `packages/db/prisma/schema.prisma` (`Patient`, `VaultObject`, `TriageCase`, `DispatchRecord`, `ClinicalChart`, `EPrescription`)
+- Local default: in-memory mock client from `@ihs/db` (no RDS required)
+- App APIs: patient `/api/vault`, `/api/triage/book` · clinical `/api/clinical/chart` · ops `/api/dispatch/telemetry`
+
+### Phase 5 production / CI
+- Next.js `output: 'standalone'` + `experimental.outputFileTracingRoot` for monorepo Docker images
+- Root `Dockerfile` and `apps/*/Dockerfile` multi-stage builds
+- CI: `.github/workflows/ci-cd.yml` (pnpm cache, `tsc --noEmit`, store-compliance scan, Docker build)
+- Env contract: `.env.production.example` (DATABASE_URL, IAM OIDC, S3/Glacier, Mapbox)
+
+### Granola × Nuraform dark theme tokens (mandatory)
+Internal Phase 2 surfaces default to dark mode (dispatcher / clinician night shifts). Use these exact tokens (also exported from `@ihs/types`):
+
+| Token | Value | Usage |
+|-------|-------|--------|
+| `--ihs-canvas` / `canvas` | `#020617` | Page background (slate) |
+| `--ihs-surface` / `surface` | `#0F172A` | Cards, panels, glass bases |
+| `--ihs-elevated` / `elevated` | `#111827` | Elevated drawers / modals |
+| `--ihs-border` / `border` | `rgba(148, 163, 184, 0.16)` | Hairline borders |
+| `--ihs-text` / `text` | `#F8FAFC` | Primary text |
+| `--ihs-muted` / `muted` | `#94A3B8` | Secondary text |
+| `--ihs-olive` / `olive` | `#0D5C4D` | Primary emerald accent |
+| `--ihs-mint` / `mint` | `#3DDC97` | Live / healthy telemetry |
+| `--ihs-red` / `danger` | `#DC2626` | Critical / SOS |
+| `--ihs-amber` / `warning` | `#D97706` | Amber geofence / SLA warn |
+| `--ihs-blue` / `info` | `#2563EB` | Informational |
+| `--font-serif` | Playfair Display | Display headings |
+| `--font-sans` | Inter | UI body |
+
+Tailwind maps must expose `ihs.*` colors matching these tokens. Do not introduce purple-gradient or cream-canvas themes on Phase 2 apps.
+
+## CODE GENERATION GUIDELINES
 - Always implement comprehensive error handling and logging.
 - Ensure all database queries match the exact Prisma schema defined in the architectural spec.
 - Write full, runnable files rather than partial snippets whenever creating or updating code.

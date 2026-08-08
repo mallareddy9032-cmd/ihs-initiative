@@ -1,0 +1,169 @@
+// ============================================================================
+// FILE: packages/db/prisma/schema.prisma
+// CONTEXT: IHS Phase 4 — Shared Data Plane (Vault, Triage, Clinical Chart, Dispatch)
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// Identity
+// ----------------------------------------------------------------------------
+
+model Patient {
+  id        String   @id @default(uuid())
+  ihsUid    String   @unique @map("ihs_uid")
+  firstName String   @map("first_name")
+  lastName  String   @map("last_name")
+  phone     String?
+  homeLat   Float    @default(14.6819) @map("home_lat")
+  homeLng   Float    @default(77.6006) @map("home_lng")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  vaultObjects   VaultObject[]
+  triageCases    TriageCase[]
+  clinicalCharts ClinicalChart[]
+
+  @@map("patients")
+}
+
+// ----------------------------------------------------------------------------
+// Encrypted Health Vault
+// ----------------------------------------------------------------------------
+
+model VaultObject {
+  id             String   @id @default(uuid())
+  patientId      String   @map("patient_id")
+  title          String
+  mimeType       String   @map("mime_type")
+  /// AES-256-GCM ciphertext (base64) or object-store pointer
+  ciphertext     String
+  iv             String
+  /// SHA-256 integrity hash of plaintext prior to encryption
+  integrityHash  String   @map("integrity_hash")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  @@index([patientId])
+  @@map("vault_objects")
+}
+
+// ----------------------------------------------------------------------------
+// Triage & Dispatch GIS
+// ----------------------------------------------------------------------------
+
+enum TriageServiceType {
+  HOME_VISIT
+  TELECONSULT
+  EMERGENCY
+  FOLLOW_UP
+}
+
+enum TriageStatus {
+  QUEUED
+  DISPATCHED
+  IN_PROGRESS
+  CLOSED
+  CANCELLED
+}
+
+enum DispatchStatus {
+  ASSIGNED
+  EN_ROUTE
+  ON_SCENE
+  TRANSPORTING
+  COMPLETE
+  CANCELLED
+}
+
+model TriageCase {
+  id          String            @id @default(uuid())
+  patientId   String            @map("patient_id")
+  ihsUid      String            @map("ihs_uid")
+  serviceType TriageServiceType @map("service_type")
+  status      TriageStatus      @default(QUEUED)
+  priority    String            @default("P2")
+  sector      String?
+  latitude    Float?
+  longitude   Float?
+  notes       String?
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  patient        Patient          @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  dispatch       DispatchRecord?
+  clinicalCharts ClinicalChart[]
+
+  @@index([ihsUid])
+  @@index([status])
+  @@index([createdAt])
+  @@map("triage_cases")
+}
+
+model DispatchRecord {
+  id              String         @id @default(uuid())
+  triageCaseId    String         @unique @map("triage_case_id")
+  fleetId         String?        @map("fleet_id")
+  callsign        String?
+  status          DispatchStatus @default(ASSIGNED)
+  lat             Float
+  lng             Float
+  etaMins         Int?           @map("eta_mins")
+  lastTelemetryAt DateTime       @default(now()) @map("last_telemetry_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  triageCase TriageCase @relation(fields: [triageCaseId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([lastTelemetryAt])
+  @@map("dispatch_records")
+}
+
+// ----------------------------------------------------------------------------
+// Clinical Chart (SOAP) & E-Prescription
+// ----------------------------------------------------------------------------
+
+model ClinicalChart {
+  id           String   @id @default(uuid())
+  patientId    String   @map("patient_id")
+  triageCaseId String?  @map("triage_case_id")
+  clinicianUid String   @map("clinician_uid")
+  subjective   String
+  objective    String
+  assessment   String
+  plan         String
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  patient       Patient         @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  triageCase    TriageCase?     @relation(fields: [triageCaseId], references: [id], onDelete: SetNull)
+  prescriptions EPrescription[]
+
+  @@index([patientId])
+  @@index([clinicianUid])
+  @@map("clinical_charts")
+}
+
+model EPrescription {
+  id           String   @id @default(uuid())
+  chartId      String   @map("chart_id")
+  drugName     String   @map("drug_name")
+  dosage       String
+  duration     String
+  instructions String?
+  issuedAt     DateTime @default(now()) @map("issued_at")
+
+  chart ClinicalChart @relation(fields: [chartId], references: [id], onDelete: Cascade)
+
+  @@index([chartId])
+  @@map("e_prescriptions")
+}

@@ -1,0 +1,51 @@
+# Git / IDE
+.git
+.github
+.cursor
+.idea
+.vscode
+**/.DS_Store
+
+# Dependencies & caches (reinstalled in image)
+**/node_modules
+**/.pnpm-store
+**/.next
+**/dist
+**/build
+**/coverage
+**/.turbo
+**/.cache
+**/*.tsbuildinfo
+
+# Env & secrets
+.env
+.env.*
+!.env.production.example
+!.env.example
+
+# Non-portal apps / legacy surfaces (not part of Phase 5 portal images)
+apps/admin-portal
+apps/client-app
+apps/doctor-portal
+apps/driver-app
+apps/field-tablet
+apps/hospital-portal
+apps/marketing-site
+apps/sla-monitor
+apps/web-portals
+services
+infra
+docs
+agent-transcripts
+
+# Locks from other package managers
+package-lock.json
+**/package-lock.json
+yarn.lock
+
+# Tests / misc
+**/*.md
+!README.md
+**/__tests__
+**/*.test.ts
+**/*.test.tsx

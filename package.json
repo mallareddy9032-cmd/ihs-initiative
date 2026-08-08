@@ -1,0 +1,31 @@
+{
+  "name": "ihs-monorepo",
+  "version": "2.0.0",
+  "private": true,
+  "description": "IHS Phase 2–5 monorepo — consolidated portals + shared packages",
+  "packageManager": "pnpm@9.15.4",
+  "workspaces": [
+    "apps/patient-portal",
+    "apps/clinical-workspace",
+    "apps/operations-hub",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:patient": "pnpm --filter @ihs/patient-portal dev",
+    "dev:clinical": "pnpm --filter @ihs/clinical-workspace dev",
+    "dev:ops": "pnpm --filter @ihs/operations-hub dev",
+    "build:patient": "pnpm --filter @ihs/patient-portal build",
+    "build:clinical": "pnpm --filter @ihs/clinical-workspace build",
+    "build:ops": "pnpm --filter @ihs/operations-hub build",
+    "db:generate": "pnpm --filter @ihs/db generate",
+    "typecheck": "pnpm --filter @ihs/types exec tsc --noEmit && pnpm --filter @ihs/auth-client exec tsc --noEmit && pnpm --filter @ihs/db exec tsc --noEmit && pnpm --filter @ihs/patient-portal exec tsc --noEmit && pnpm --filter @ihs/clinical-workspace exec tsc --noEmit && pnpm --filter @ihs/operations-hub exec tsc --noEmit",
+    "typecheck:packages": "pnpm --filter @ihs/types exec tsc --noEmit && pnpm --filter @ihs/auth-client exec tsc --noEmit && pnpm --filter @ihs/db exec tsc --noEmit",
+    "security:scan": "bash scripts/ci/security-scan.sh",
+    "docker:patient": "docker build -f apps/patient-portal/Dockerfile -t ihs-patient-portal:local .",
+    "docker:clinical": "docker build -f apps/clinical-workspace/Dockerfile -t ihs-clinical-workspace:local .",
+    "docker:ops": "docker build -f apps/operations-hub/Dockerfile -t ihs-operations-hub:local ."
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

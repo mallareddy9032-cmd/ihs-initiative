@@ -1,0 +1,23 @@
+{
+  "name": "@ihs/db",
+  "version": "0.1.0",
+  "private": true,
+  "description": "IHS Phase 4 shared Prisma data plane + local mock client",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "generate": "prisma generate",
+    "postinstall": "prisma generate || true",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0"
+  },
+  "devDependencies": {
+    "prisma": "^5.22.0",
+    "typescript": "^5.1.6"
+  }
+}

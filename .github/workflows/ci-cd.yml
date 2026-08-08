@@ -1,0 +1,130 @@
+# ============================================================================
+# FILE: .github/workflows/ci-cd.yml
+# CONTEXT: Phase 5 — Production CI for consolidated Next.js portals
+# ============================================================================
+name: Phase 5 Portal CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/patient-portal/**'
+      - 'apps/clinical-workspace/**'
+      - 'apps/operations-hub/**'
+      - 'packages/**'
+      - 'Dockerfile'
+      - 'apps/*/Dockerfile'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+      - '.npmrc'
+      - 'scripts/ci/**'
+      - '.github/workflows/ci-cd.yml'
+      - '.env.production.example'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/patient-portal/**'
+      - 'apps/clinical-workspace/**'
+      - 'apps/operations-hub/**'
+      - 'packages/**'
+      - 'Dockerfile'
+      - 'apps/*/Dockerfile'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+      - '.npmrc'
+      - 'scripts/ci/**'
+      - '.github/workflows/ci-cd.yml'
+      - '.env.production.example'
+  workflow_dispatch:
+
+concurrency:
+  group: phase5-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PNPM_VERSION: 9.15.4
+  NODE_VERSION: 20
+  IHS_DB_MOCK: 'true'
+  DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ihs_ci?schema=public
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  typecheck:
+    name: TypeScript (strict)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client (@ihs/db)
+        run: pnpm --filter @ihs/db generate
+
+      - name: Strict TypeScript compile (tsc --noEmit)
+        run: |
+          set -euo pipefail
+          pnpm --filter @ihs/types exec tsc --noEmit
+          pnpm --filter @ihs/auth-client exec tsc --noEmit
+          pnpm --filter @ihs/db exec tsc --noEmit
+          pnpm --filter @ihs/patient-portal exec tsc --noEmit
+          pnpm --filter @ihs/clinical-workspace exec tsc --noEmit
+          pnpm --filter @ihs/operations-hub exec tsc --noEmit
+
+  security-scan:
+    name: Store compliance security scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assert no eval() / remote script injection
+        run: bash scripts/ci/security-scan.sh
+
+  docker-build:
+    name: Docker build verification
+    runs-on: ubuntu-latest
+    needs: [typecheck, security-scan]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: patient-portal
+            image: ihs-patient-portal
+          - app: clinical-workspace
+            image: ihs-clinical-workspace
+          - app: operations-hub
+            image: ihs-operations-hub
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.image }} (standalone)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/${{ matrix.app }}/Dockerfile
+          push: false
+          tags: ${{ matrix.image }}:ci-${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
+          build-args: |
+            PNPM_VERSION=${{ env.PNPM_VERSION }}
