@@ -9,6 +9,7 @@ import {
   LOCAL_DEV_SUPER_ADMIN_UID,
   normalizeUid,
 } from '@ihs/auth-client';
+import { SpotlightCard, SpringButton } from '@/components/ui/motion';
 
 type LoginSuccessPayload = {
   success?: boolean;
@@ -131,15 +132,18 @@ export function LoginForm({ surfaceLabel }: { surfaceLabel: string }) {
     isValidUidFormat(normalizeUid(uid)) && isValidPinFormat(pin) && !loading;
 
   return (
-    <div className="glass-panel w-full max-w-md rounded-2xl p-8">
-      <h1 className="text-center font-serif text-2xl text-ihs-text">{surfaceLabel}</h1>
+    <SpotlightCard className="w-full max-w-md p-8">
+      <p className="text-center text-[11px] font-bold uppercase tracking-[0.18em] text-amber-300">
+        Command Access
+      </p>
+      <h1 className="mt-2 text-center font-serif text-3xl text-ihs-text">{surfaceLabel}</h1>
       <p className="mt-2 text-center text-xs font-bold uppercase tracking-widest text-ihs-muted">
         Operator UID · PIN
       </p>
 
       {error ? (
         <div
-          className="mt-6 rounded-lg border border-ihs-danger/50 bg-ihs-danger/15 px-3 py-3 text-center text-sm font-semibold text-rose-200"
+          className="mt-6 rounded-xl border border-ihs-danger/50 bg-ihs-danger/15 px-3 py-3 text-center text-sm font-semibold text-rose-200"
           role="alert"
         >
           {error}
@@ -154,7 +158,7 @@ export function LoginForm({ surfaceLabel }: { surfaceLabel: string }) {
             required
             autoComplete="username"
             placeholder="e.g., SUPER-001"
-            className="mt-2 w-full rounded-xl border border-ihs-border bg-ihs-elevated px-3 py-3 uppercase text-ihs-text outline-none focus:border-ihs-warning"
+            className="mt-2 w-full rounded-xl border border-white/10 bg-black/35 px-3 py-3 uppercase text-ihs-text outline-none transition-colors focus:border-amber-300/50"
             value={uid}
             onChange={(e) => setUid(e.target.value.toUpperCase())}
           />
@@ -169,20 +173,20 @@ export function LoginForm({ surfaceLabel }: { surfaceLabel: string }) {
             maxLength={6}
             autoComplete="current-password"
             placeholder="••••••"
-            className="mt-2 w-full rounded-xl border border-ihs-border bg-ihs-elevated px-3 py-3 text-center tracking-[0.4em] text-ihs-text outline-none focus:border-ihs-warning"
+            className="mt-2 w-full rounded-xl border border-white/10 bg-black/35 px-3 py-3 text-center tracking-[0.4em] text-ihs-text outline-none transition-colors focus:border-amber-300/50"
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
           />
         </label>
 
-        <button
+        <SpringButton
           type="submit"
           disabled={!canSubmit}
-          className="ios-press w-full rounded-xl bg-ihs-danger px-4 py-3 text-sm font-bold uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:bg-ihs-elevated disabled:text-ihs-muted"
+          className="w-full rounded-xl bg-ihs-danger px-4 py-3 text-sm font-bold uppercase tracking-widest text-white shadow-glow-red disabled:cursor-not-allowed disabled:bg-ihs-elevated disabled:text-ihs-muted disabled:shadow-none"
         >
           {loading ? 'Authenticating…' : 'Access Command'}
-        </button>
+        </SpringButton>
       </form>
-    </div>
+    </SpotlightCard>
   );
 }
