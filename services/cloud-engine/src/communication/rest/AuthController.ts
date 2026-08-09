@@ -22,7 +22,10 @@ function setAuthCookie(res: Response, token: string) {
 export class AuthController {
   static async authenticateOperator(req: Request, res: Response) {
     try {
-      const { uid, pin } = req.body as { uid?: string; pin?: string };
+      const body = req.body as { uid?: string; ihs_uid?: string; pin?: string };
+      // Portals send `ihs_uid`; legacy clients may still send `uid`.
+      const uid = (body.ihs_uid || body.uid || '').trim().toUpperCase();
+      const pin = typeof body.pin === 'string' ? body.pin : '';
 
       if (!uid || !pin) {
         return res.status(400).json({ error: 'MALFORMED_CREDENTIALS' });
@@ -60,7 +63,7 @@ export class AuthController {
       }
 
       const operator = await ihsDbClient.operator.findUnique({
-        where: { ihsUid: uid.toUpperCase() },
+        where: { ihsUid: uid },
       });
 
       if (!operator || operator.status !== 'ACTIVE') {

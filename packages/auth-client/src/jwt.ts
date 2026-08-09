@@ -29,7 +29,11 @@ function parseAal(payload: JWTPayload): AuthenticatorAssuranceLevel {
 }
 
 function toClaims(payload: JWTPayload): IhsAuthClaims | null {
-  const sub = typeof payload.sub === 'string' ? payload.sub : null;
+  // Cloud Engine tokens historically used `ihs_uid` without `sub`.
+  const sub =
+    (typeof payload.sub === 'string' && payload.sub) ||
+    (typeof payload.ihs_uid === 'string' && payload.ihs_uid) ||
+    null;
   const roleRaw = payload.role;
   if (!sub || !isIhsRole(roleRaw)) {
     return null;

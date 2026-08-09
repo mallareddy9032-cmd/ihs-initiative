@@ -97,21 +97,19 @@ export function VaultTriageStudio() {
       <FadeUp>
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-ihs-mint">
-              Editorial Vault
-            </p>
-            <h1 className="mt-2 font-serif text-4xl text-ihs-text md:text-5xl">
+            <p className="ihs-micro text-[#4B5563]">Clinical Bio-Tech Vault</p>
+            <h1 className="mt-2 font-serif text-4xl tracking-tight text-[#0F172A] md:text-5xl">
               Your care, encrypted.
             </h1>
-            <p className="mt-3 max-w-xl text-sm leading-relaxed text-ihs-muted">
+            <p className="mt-3 max-w-xl text-sm leading-relaxed text-[#4B5563]">
               Drag clinical files into the vault, then book doorstep or emergency triage through a
               fluid three-step wizard.
             </p>
           </div>
-          <label className="text-xs font-bold uppercase tracking-wider text-ihs-muted">
+          <label className="ihs-micro">
             Patient UID
             <input
-              className="mt-2 block w-48 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-ihs-text outline-none focus:border-white/20"
+              className="ihs-input w-48"
               value={ihsUid}
               onChange={(e) => setIhsUid(e.target.value.toUpperCase())}
             />
@@ -121,7 +119,10 @@ export function VaultTriageStudio() {
 
       {error ? (
         <FadeUp>
-          <p className="rounded-xl border border-ihs-danger/40 bg-ihs-danger/10 px-4 py-3 text-sm text-rose-200" role="alert">
+          <p
+            className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
+            role="alert"
+          >
             {error}
           </p>
         </FadeUp>
@@ -129,11 +130,12 @@ export function VaultTriageStudio() {
 
       <div className="bento-grid">
         <FadeUp className="col-span-12 lg:col-span-7">
-          <SpotlightCard className="min-h-[280px] p-6">
-            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-ihs-mint">
-              Encrypted Health Vault
-            </p>
-            <h2 className="mt-2 font-serif text-2xl">Drop to seal</h2>
+          <SpotlightCard className="min-h-[280px] !rounded-3xl">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="ihs-micro">Encrypted Health Vault</p>
+              <span className="ihs-pill">AES · SHA-256</span>
+            </div>
+            <h2 className="mt-2 font-serif text-2xl text-[#0F172A]">Drop to seal</h2>
             <div
               onDragOver={(e) => {
                 e.preventDefault();
@@ -145,17 +147,17 @@ export function VaultTriageStudio() {
                 setDragOver(false);
                 void onDrop(e.dataTransfer.files);
               }}
-              className={`mt-5 flex min-h-[160px] flex-col items-center justify-center rounded-2xl border border-dashed px-6 text-center transition-colors ${
+              className={`mt-5 flex min-h-[160px] flex-col items-center justify-center rounded-3xl border border-dashed px-6 text-center transition-colors ${
                 dragOver
-                  ? 'border-ihs-mint/70 bg-ihs-mint/10'
-                  : 'border-white/15 bg-white/[0.02]'
+                  ? 'border-[#22C55E] bg-[#E8F5E9]'
+                  : 'border-slate-300 bg-[#F4F7F4]'
               }`}
             >
-              <p className="font-serif text-xl text-ihs-text">
+              <p className="font-serif text-xl text-[#0F172A]">
                 {uploading ? 'Encrypting…' : 'Drag & drop clinical files'}
               </p>
-              <p className="mt-2 text-xs text-ihs-muted">AES envelope · SHA-256 integrity</p>
-              <label className="mt-4 cursor-pointer text-xs font-bold uppercase tracking-wider text-ihs-mint">
+              <p className="mt-2 text-xs text-[#4B5563]">AES envelope · SHA-256 integrity</p>
+              <label className="mt-4 cursor-pointer text-xs font-semibold uppercase tracking-wider text-[#143525]">
                 Browse files
                 <input
                   type="file"
@@ -168,42 +170,40 @@ export function VaultTriageStudio() {
               {objects.slice(0, 4).map((obj) => (
                 <li
                   key={obj.id}
-                  className="flex items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm"
+                  className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white px-3 py-2 text-sm transition-all duration-300 hover:-translate-y-0.5"
                 >
-                  <span className="truncate text-ihs-text">{obj.title}</span>
-                  <span className="font-mono text-[10px] text-ihs-muted">
+                  <span className="truncate text-[#0F172A]">{obj.title}</span>
+                  <span className="font-mono text-[10px] text-[#4B5563]">
                     {obj.integrityHash.slice(0, 10)}…
                   </span>
                 </li>
               ))}
               {objects.length === 0 ? (
-                <li className="text-sm text-ihs-muted">No vault objects yet.</li>
+                <li className="text-sm text-[#4B5563]">No vault objects yet.</li>
               ) : null}
             </ul>
           </SpotlightCard>
         </FadeUp>
 
         <FadeUp className="col-span-12 lg:col-span-5">
-          <SpotlightCard className="p-6">
-            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-amber-300">
-              Triage Booking
-            </p>
-            <h2 className="mt-2 font-serif text-2xl">Multi-step wizard</h2>
+          <SpotlightCard className="!rounded-3xl">
+            <p className="ihs-micro">Triage Booking</p>
+            <h2 className="mt-2 font-serif text-2xl text-[#0F172A]">Multi-step wizard</h2>
 
-            <div className="relative mt-5 flex gap-2">
+            <div className="relative mt-5 flex gap-2 rounded-full bg-[#F4F7F4] p-1">
               {STEPS.map((label, idx) => (
                 <button
                   key={label}
                   type="button"
                   onClick={() => setStep(idx)}
-                  className={`relative flex-1 rounded-full px-2 py-2 text-[11px] font-bold uppercase tracking-wider ${
-                    step === idx ? 'text-ihs-text' : 'text-ihs-muted'
+                  className={`relative flex-1 rounded-full px-2 py-2 text-[11px] font-semibold uppercase tracking-wider ${
+                    step === idx ? 'text-white' : 'text-[#4B5563]'
                   }`}
                 >
                   {step === idx ? (
                     <motion.span
                       layoutId="triage-tab"
-                      className="absolute inset-0 rounded-full border border-white/15 bg-white/[0.06]"
+                      className="absolute inset-0 rounded-full bg-[#143525]"
                       transition={springSoft}
                     />
                   ) : null}
@@ -223,10 +223,10 @@ export function VaultTriageStudio() {
                   className="space-y-3"
                 >
                   {step === 0 ? (
-                    <label className="block text-xs font-bold uppercase tracking-wider text-ihs-muted">
+                    <label className="ihs-micro block">
                       Service
                       <select
-                        className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-ihs-text"
+                        className="ihs-input"
                         value={serviceType}
                         onChange={(e) => setServiceType(e.target.value)}
                       >
@@ -238,10 +238,10 @@ export function VaultTriageStudio() {
                     </label>
                   ) : null}
                   {step === 1 ? (
-                    <label className="block text-xs font-bold uppercase tracking-wider text-ihs-muted">
+                    <label className="ihs-micro block">
                       Pilot Sector
                       <select
-                        className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-ihs-text"
+                        className="ihs-input"
                         value={sector}
                         onChange={(e) => setSector(e.target.value)}
                       >
@@ -253,11 +253,11 @@ export function VaultTriageStudio() {
                     </label>
                   ) : null}
                   {step === 2 ? (
-                    <label className="block text-xs font-bold uppercase tracking-wider text-ihs-muted">
+                    <label className="ihs-micro block">
                       Notes
                       <textarea
                         rows={3}
-                        className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-ihs-text"
+                        className="ihs-input font-normal normal-case tracking-normal"
                         value={notes}
                         onChange={(e) => setNotes(e.target.value)}
                         placeholder="Symptoms, access notes…"
@@ -269,33 +269,22 @@ export function VaultTriageStudio() {
 
               <div className="flex gap-2">
                 {step > 0 ? (
-                  <SpringButton
-                    type="button"
-                    onClick={() => setStep((s) => s - 1)}
-                    className="flex-1 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-xs font-bold uppercase tracking-wider text-ihs-muted"
-                  >
+                  <SpringButton type="button" variant="ghost" onClick={() => setStep((s) => s - 1)} className="flex-1">
                     Back
                   </SpringButton>
                 ) : null}
                 {step < 2 ? (
-                  <SpringButton
-                    type="button"
-                    onClick={() => setStep((s) => s + 1)}
-                    className="flex-1 rounded-xl bg-ihs-olive px-4 py-3 text-xs font-bold uppercase tracking-wider text-white shadow-glow"
-                  >
+                  <SpringButton type="button" onClick={() => setStep((s) => s + 1)} className="flex-1">
                     Continue
                   </SpringButton>
                 ) : (
-                  <SpringButton
-                    type="submit"
-                    className="flex-1 rounded-xl bg-ihs-olive px-4 py-3 text-xs font-bold uppercase tracking-wider text-white shadow-glow"
-                  >
+                  <SpringButton type="submit" className="flex-1">
                     Book Triage
                   </SpringButton>
                 )}
               </div>
               {bookingMsg ? (
-                <p className="rounded-xl border border-ihs-mint/30 bg-ihs-mint/10 px-3 py-2 text-xs text-ihs-mint">
+                <p className="rounded-2xl border border-[#DCFCE7] bg-[#E8F5E9] px-3 py-2 text-xs font-semibold text-[#143525]">
                   {bookingMsg}
                 </p>
               ) : null}

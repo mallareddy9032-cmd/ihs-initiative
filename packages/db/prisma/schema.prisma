@@ -167,3 +167,73 @@ model EPrescription {
   @@index([chartId])
   @@map("e_prescriptions")
 }
+
+// ----------------------------------------------------------------------------
+// Commercial Billing & Subscriptions (Razorpay)
+// ----------------------------------------------------------------------------
+
+enum SubscriptionStatus {
+  INACTIVE
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  HALTED
+}
+
+enum PlanTier {
+  PATIENT_ESSENTIAL
+  PATIENT_SHIELD
+  CLINICAL_PRO
+  ENTERPRISE_OPS
+}
+
+enum InvoiceStatus {
+  DRAFT
+  PAID
+  FAILED
+  VOID
+}
+
+model Subscription {
+  id                 String             @id @default(uuid())
+  userId             String             @map("user_id")
+  tenantId           String             @map("tenant_id")
+  /// Plan catalog key (PATIENT_ESSENTIAL | PATIENT_SHIELD | CLINICAL_PRO | ENTERPRISE_OPS)
+  planTier           PlanTier           @map("plan_tier")
+  status             SubscriptionStatus @default(INACTIVE)
+  razorpaySubId      String?            @unique @map("razorpay_sub_id")
+  razorpayPlanId     String?            @map("razorpay_plan_id")
+  currentPeriodStart DateTime?          @map("current_period_start")
+  currentPeriodEnd   DateTime?          @map("current_period_end")
+  cancelAtPeriodEnd  Boolean            @default(false) @map("cancel_at_period_end")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  invoices Invoice[]
+
+  @@index([userId])
+  @@index([tenantId])
+  @@index([status])
+  @@map("subscriptions")
+}
+
+model Invoice {
+  id             String        @id @default(uuid())
+  subscriptionId String        @map("subscription_id")
+  amount         Int
+  /// GST component in paise (18%)
+  taxAmount      Int           @map("tax_amount")
+  currency       String        @default("INR")
+  hsnSacCode     String        @default("998313") @map("hsn_sac_code")
+  invoiceNumber  String        @unique @map("invoice_number")
+  gstin          String?
+  pdfUrl         String?       @map("pdf_url")
+  status         InvoiceStatus @default(DRAFT)
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@index([createdAt])
+  @@map("invoices")
+}

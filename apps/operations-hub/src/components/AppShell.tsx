@@ -13,24 +13,22 @@ export function AppShell({
   children: ReactNode;
 }) {
   return (
-    <div className="ambient-spot min-h-screen">
-      <header className="relative z-[1] border-b border-white/10 bg-black/40 backdrop-blur-xl">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-6 py-5">
+    <div className="ihs-shell">
+      <header className="ihs-nav sticky top-0 z-50 border-b border-slate-200/60 bg-white/80 backdrop-blur-md">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-ihs-danger px-2.5 py-1 text-xs font-black tracking-[0.18em] text-white shadow-glow-red">
+            <div className="rounded-full bg-[#0D281E] px-3 py-1 text-xs font-bold tracking-[0.16em] text-white">
               OPS
             </div>
             <div>
-              <p className="font-serif text-2xl text-ihs-text">{title}</p>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ihs-muted">
-                {subtitle}
-              </p>
+              <p className="font-serif text-2xl tracking-tight text-[#0F172A]">{title}</p>
+              <p className="ihs-micro">{subtitle}</p>
             </div>
           </div>
-          <StatusPulse label="Command Grid Active" tone="amber" />
+          <StatusPulse label="Command Grid Active" />
         </div>
       </header>
-      <main className="relative z-[1] mx-auto w-full max-w-6xl px-6 py-10">{children}</main>
+      <main className="mx-auto w-full max-w-6xl px-6 py-10">{children}</main>
     </div>
   );
 }

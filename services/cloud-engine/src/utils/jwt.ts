@@ -5,13 +5,22 @@
 
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = () => process.env.JWT_SECRET_KEY || 'FATAL_UNCONFIGURED_SECRET';
+/** Align with @ihs/auth-client local secret when JWT_SECRET_KEY is unset. */
+const LOCAL_DEV_JWT_SECRET = 'IHS_LOCAL_DEV_JWT_SECRET_DO_NOT_USE_IN_PROD';
+
+const JWT_SECRET = () => {
+  const configured = process.env.JWT_SECRET_KEY;
+  if (configured && configured.trim().length > 0 && configured !== 'FATAL_UNCONFIGURED_SECRET') {
+    return configured;
+  }
+  return LOCAL_DEV_JWT_SECRET;
+};
 const EXPIRES_IN = '12h'; // Strict 12-hour shift expiration
 
 export interface JwtPayload {
   internal_id: string;
   ihs_uid: string;
-  role: 'DISPATCHER' | 'PHYSICIAN' | 'SYSTEM_ADMIN';
+  role: 'DISPATCHER' | 'PHYSICIAN' | 'SYSTEM_ADMIN' | 'PATIENT' | 'Super_Admin';
 }
 
 export class JwtEngine {
@@ -20,14 +29,20 @@ export class JwtEngine {
    */
   static generateToken(payload: JwtPayload): string {
     const secret = JWT_SECRET();
-    if (secret === 'FATAL_UNCONFIGURED_SECRET') {
-      console.warn('CRITICAL WARNING: Using default JWT secret in production!');
-    }
 
-    return jwt.sign(payload, secret, {
-      algorithm: 'HS256',
-      expiresIn: EXPIRES_IN,
-    });
+    // Include `sub` so Next.js middleware (@ihs/auth-client) can verify claims.
+    return jwt.sign(
+      {
+        ...payload,
+        sub: payload.ihs_uid,
+        name: payload.ihs_uid,
+      },
+      secret,
+      {
+        algorithm: 'HS256',
+        expiresIn: EXPIRES_IN,
+      },
+    );
   }
 
   /**

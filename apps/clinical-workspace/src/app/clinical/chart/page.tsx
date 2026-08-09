@@ -28,9 +28,6 @@ type ChartRow = {
   }>;
 };
 
-const fieldClass =
-  'mt-2 w-full rounded-xl border border-white/10 bg-black/35 px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-ihs-text outline-none transition-colors focus:border-sky-400/50';
-
 export default function ClinicalChartPage() {
   const [clinicianUid, setClinicianUid] = useState('DOC-101');
   const [patientIhsUid, setPatientIhsUid] = useState('IHS-8802');
@@ -99,53 +96,49 @@ export default function ClinicalChartPage() {
   };
 
   return (
-    <div className="ambient-spot min-h-screen pb-28 text-ihs-text">
-      <header className="relative z-[1] border-b border-white/10 bg-black/40 backdrop-blur-xl">
-        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-4 px-6 py-5">
+    <div className="ihs-shell pb-28 text-[#0F172A]">
+      <header className="sticky top-0 z-50 border-b border-slate-200/60 bg-white/80 backdrop-blur-md">
+        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-4 px-6 py-4">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-sky-300">
-              Charting · Focus Mode
-            </p>
-            <h1 className="font-serif text-3xl text-ihs-text md:text-4xl">SOAP & E-Rx</h1>
+            <p className="ihs-micro">Charting · Focus Mode</p>
+            <h1 className="font-serif text-3xl tracking-tight md:text-4xl">SOAP & E-Rx</h1>
           </div>
           <div className="flex items-center gap-3">
             <StatusPulse label="Encounter Open" tone="sky" />
             <Link href="/">
-              <SpringButton className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-xs font-bold uppercase tracking-wider text-ihs-muted hover:border-white/20 hover:text-ihs-text">
-                Workspace
-              </SpringButton>
+              <SpringButton variant="ghost">Workspace</SpringButton>
             </Link>
           </div>
         </div>
       </header>
 
-      <main className="relative z-[1] mx-auto w-full max-w-5xl px-6 py-8">
+      <main className="mx-auto w-full max-w-5xl px-6 py-8">
         <PageStagger className="grid gap-6 lg:grid-cols-2">
           <FadeUp>
             <form onSubmit={onSubmit} id="soap-form" className="space-y-4">
-              <SpotlightCard className="space-y-4 p-6">
+              <SpotlightCard className="!rounded-3xl space-y-4">
                 <h2 className="font-serif text-2xl">New Encounter</h2>
                 {error ? (
                   <p
-                    className="rounded-xl border border-ihs-danger/40 bg-ihs-danger/15 px-3 py-2 text-sm text-rose-200"
+                    className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"
                     role="alert"
                   >
                     {error}
                   </p>
                 ) : null}
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-ihs-muted">
+                  <label className="ihs-micro block">
                     Clinician UID
                     <input
-                      className={fieldClass}
+                      className="ihs-input"
                       value={clinicianUid}
                       onChange={(e) => setClinicianUid(e.target.value.toUpperCase())}
                     />
                   </label>
-                  <label className="text-xs font-bold uppercase tracking-wider text-ihs-muted">
+                  <label className="ihs-micro block">
                     Patient UID
                     <input
-                      className={fieldClass}
+                      className="ihs-input"
                       value={patientIhsUid}
                       onChange={(e) => setPatientIhsUid(e.target.value.toUpperCase())}
                     />
@@ -159,15 +152,12 @@ export default function ClinicalChartPage() {
                     ['Plan', plan, setPlan],
                   ] as const
                 ).map(([label, value, setter]) => (
-                  <label
-                    key={label}
-                    className="block text-xs font-bold uppercase tracking-wider text-ihs-muted"
-                  >
+                  <label key={label} className="ihs-micro block">
                     {label}
                     <textarea
                       required
                       rows={3}
-                      className={fieldClass}
+                      className="ihs-input font-normal normal-case tracking-normal"
                       value={value}
                       onChange={(e) => setter(e.target.value)}
                     />
@@ -175,34 +165,32 @@ export default function ClinicalChartPage() {
                 ))}
               </SpotlightCard>
 
-              <SpotlightCard className="p-6">
-                <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-amber-300">
-                  E-Prescription
-                </p>
-                <h3 className="mt-1 font-serif text-xl text-ihs-text">Rx Card</h3>
+              <SpotlightCard className="!rounded-3xl">
+                <p className="ihs-micro">E-Prescription</p>
+                <h3 className="mt-1 font-serif text-xl">Rx Card</h3>
                 <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  <label className="text-xs font-bold uppercase tracking-wider text-ihs-muted">
+                  <label className="ihs-micro block">
                     Drug
                     <input
-                      className={fieldClass}
+                      className="ihs-input"
                       value={drugName}
                       onChange={(e) => setDrugName(e.target.value)}
                       placeholder="Amoxicillin"
                     />
                   </label>
-                  <label className="text-xs font-bold uppercase tracking-wider text-ihs-muted">
+                  <label className="ihs-micro block">
                     Dosage
                     <input
-                      className={fieldClass}
+                      className="ihs-input"
                       value={dosage}
                       onChange={(e) => setDosage(e.target.value)}
                       placeholder="500mg"
                     />
                   </label>
-                  <label className="text-xs font-bold uppercase tracking-wider text-ihs-muted">
+                  <label className="ihs-micro block">
                     Duration
                     <input
-                      className={fieldClass}
+                      className="ihs-input"
                       value={duration}
                       onChange={(e) => setDuration(e.target.value)}
                       placeholder="5 days"
@@ -214,7 +202,7 @@ export default function ClinicalChartPage() {
           </FadeUp>
 
           <FadeUp>
-            <SpotlightCard className="p-6">
+            <SpotlightCard className="!rounded-3xl">
               <h2 className="font-serif text-2xl">Recent Charts</h2>
               <ul className="mt-4 space-y-3">
                 {charts.map((chart, i) => (
@@ -223,21 +211,21 @@ export default function ClinicalChartPage() {
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ ...springSoft, delay: i * 0.05 }}
-                    className="rounded-xl border border-white/10 bg-black/35 px-4 py-3 transition-colors hover:border-white/20"
+                    className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-emerald-950/10"
                   >
-                    <p className="font-mono text-xs text-ihs-mint">{chart.id.slice(0, 8)}…</p>
-                    <p className="mt-1 text-sm text-ihs-text">
-                      <span className="text-ihs-muted">S:</span> {chart.subjective}
+                    <p className="font-mono text-xs text-[#143525]">{chart.id.slice(0, 8)}…</p>
+                    <p className="mt-1 text-sm text-[#0F172A]">
+                      <span className="text-[#4B5563]">S:</span> {chart.subjective}
                     </p>
-                    <p className="text-sm text-ihs-text">
-                      <span className="text-ihs-muted">A:</span> {chart.assessment}
+                    <p className="text-sm text-[#0F172A]">
+                      <span className="text-[#4B5563]">A:</span> {chart.assessment}
                     </p>
                     {chart.prescriptions[0] ? (
-                      <div className="mt-3 rounded-lg border border-amber-300/25 bg-amber-500/10 px-3 py-2">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-amber-300">
+                      <div className="mt-3 rounded-2xl border border-[#DCFCE7] bg-[#E8F5E9] px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-[#143525]">
                           Prescription
                         </p>
-                        <p className="mt-1 text-xs text-amber-100">
+                        <p className="mt-1 text-xs text-[#0F172A]">
                           {chart.prescriptions[0].drugName} · {chart.prescriptions[0].dosage} ·{' '}
                           {chart.prescriptions[0].duration}
                         </p>
@@ -246,7 +234,7 @@ export default function ClinicalChartPage() {
                   </motion.li>
                 ))}
                 {charts.length === 0 ? (
-                  <li className="text-sm text-ihs-muted">No charts yet for this clinician.</li>
+                  <li className="text-sm text-[#4B5563]">No charts yet for this clinician.</li>
                 ) : null}
               </ul>
             </SpotlightCard>
@@ -254,22 +242,18 @@ export default function ClinicalChartPage() {
         </PageStagger>
       </main>
 
-      {/* Floating action dock */}
       <motion.div
         initial={{ y: 40, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={springSoft}
         className="fixed inset-x-0 bottom-5 z-50 flex justify-center px-4"
       >
-        <div className="flex items-center gap-2 rounded-2xl border border-white/15 bg-neutral-900/70 px-3 py-2 shadow-[0_20px_50px_rgba(0,0,0,0.55)] backdrop-blur-xl">
-          <span className="hidden px-2 font-mono text-[10px] uppercase tracking-wider text-ihs-muted sm:inline">
+        <div className="flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/90 px-3 py-2 shadow-lg shadow-emerald-950/10 backdrop-blur-md">
+          <span className="hidden px-2 font-mono text-[10px] uppercase tracking-wider text-[#4B5563] sm:inline">
             {patientIhsUid}
           </span>
           <Link href="/">
-            <SpringButton
-              type="button"
-              className="rounded-xl border border-white/10 px-3 py-2 text-xs font-bold uppercase tracking-wider text-ihs-muted"
-            >
+            <SpringButton type="button" variant="ghost" className="!px-4 !py-2">
               Queue
             </SpringButton>
           </Link>
@@ -277,7 +261,7 @@ export default function ClinicalChartPage() {
             type="submit"
             form="soap-form"
             disabled={saving}
-            className="rounded-xl bg-ihs-olive px-5 py-2.5 text-xs font-bold uppercase tracking-widest text-white shadow-glow disabled:opacity-60"
+            className="!px-5 !py-2.5"
           >
             {saving ? 'Writing…' : 'Save SOAP + E-Rx'}
           </SpringButton>

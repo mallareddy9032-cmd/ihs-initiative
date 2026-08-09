@@ -2,8 +2,19 @@
 
 import { FormEvent, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { buildLoginRequest, isValidPinFormat, isValidUidFormat, normalizeUid } from '@ihs/auth-client';
+import {
+  buildLoginRequest,
+  isValidPinFormat,
+  isValidUidFormat,
+  LOCAL_DEV_PATIENT_UID,
+  normalizeUid,
+} from '@ihs/auth-client';
 import { SpotlightCard, SpringButton } from '@/components/ui/motion';
+
+type LoginSuccessPayload = {
+  success?: boolean;
+  error?: string;
+};
 
 export function LoginForm({ surfaceLabel }: { surfaceLabel: string }) {
   const router = useRouter();
@@ -13,27 +24,54 @@ export function LoginForm({ surfaceLabel }: { surfaceLabel: string }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const postLogin = async (body: {
+    ihs_uid: string;
+    pin: string;
+    local_fallback?: boolean;
+  }): Promise<{ res: Response; data: LoginSuccessPayload }> => {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(body),
+    });
+
+    let data: LoginSuccessPayload = {};
+    try {
+      data = (await res.json()) as LoginSuccessPayload;
+    } catch {
+      data = { error: 'Authentication response was not valid JSON.' };
+    }
+    return { res, data };
+  };
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
+
     try {
       const body = buildLoginRequest(uid, pin);
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = (await res.json()) as { error?: string; success?: boolean };
+      let { res, data } = await postLogin(body);
+
+      if (!res.ok || !data.success) {
+        ({ res, data } = await postLogin({ ...body, local_fallback: true }));
+      }
+
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Authentication failed. Verify credentials.');
       }
+
       const callback = searchParams.get('callbackUrl') || '/';
       router.replace(callback.startsWith('/') ? callback : '/');
       router.refresh();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Authentication failed.';
-      setError(message);
+      if (normalizeUid(uid) === LOCAL_DEV_PATIENT_UID) {
+        setError('Unable to establish local patient session. Use IHS-8802 with PIN 123456.');
+      } else {
+        setError(message);
+      }
       setPin('');
     } finally {
       setLoading(false);
@@ -44,18 +82,19 @@ export function LoginForm({ surfaceLabel }: { surfaceLabel: string }) {
     isValidUidFormat(normalizeUid(uid)) && isValidPinFormat(pin) && !loading;
 
   return (
-    <SpotlightCard className="w-full max-w-md p-8">
-      <p className="text-center text-[11px] font-bold uppercase tracking-[0.18em] text-ihs-mint">
-        Encrypted Vault
-      </p>
-      <h1 className="mt-2 text-center font-serif text-3xl text-ihs-text">{surfaceLabel}</h1>
-      <p className="mt-2 text-center text-xs font-bold uppercase tracking-widest text-ihs-muted">
+    <SpotlightCard className="w-full max-w-md !rounded-3xl">
+      <p className="ihs-micro text-center">Encrypted Vault</p>
+      <h1 className="mt-2 text-center font-serif text-3xl text-[#0F172A]">{surfaceLabel}</h1>
+      <p className="mt-2 text-center text-xs font-semibold uppercase tracking-wider text-[#4B5563]">
         Secure UID · PIN Login
+      </p>
+      <p className="mt-3 text-center text-xs text-[#4B5563]">
+        Local pilot: <span className="font-mono text-[#143525]">IHS-8802 / 123456</span>
       </p>
 
       {error ? (
         <div
-          className="mt-6 rounded-xl border border-ihs-danger/50 bg-ihs-danger/15 px-3 py-3 text-center text-sm font-semibold text-rose-200"
+          className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-3 text-center text-sm font-semibold text-rose-700"
           role="alert"
         >
           {error}
@@ -63,20 +102,20 @@ export function LoginForm({ surfaceLabel }: { surfaceLabel: string }) {
       ) : null}
 
       <form onSubmit={onSubmit} className="mt-6 space-y-5">
-        <label className="block text-xs font-bold uppercase tracking-wide text-ihs-muted">
+        <label className="ihs-micro block">
           Patient UID
           <input
             type="text"
             required
             autoComplete="username"
             placeholder="e.g., IHS-8802"
-            className="mt-2 w-full rounded-xl border border-white/10 bg-black/35 px-3 py-3 uppercase text-ihs-text outline-none transition-colors focus:border-ihs-mint/50"
+            className="ihs-input uppercase"
             value={uid}
             onChange={(e) => setUid(e.target.value.toUpperCase())}
           />
         </label>
 
-        <label className="block text-xs font-bold uppercase tracking-wide text-ihs-muted">
+        <label className="ihs-micro block">
           Secure PIN
           <input
             type="password"
@@ -85,17 +124,13 @@ export function LoginForm({ surfaceLabel }: { surfaceLabel: string }) {
             maxLength={6}
             autoComplete="current-password"
             placeholder="••••••"
-            className="mt-2 w-full rounded-xl border border-white/10 bg-black/35 px-3 py-3 text-center tracking-[0.4em] text-ihs-text outline-none transition-colors focus:border-ihs-mint/50"
+            className="ihs-input text-center tracking-[0.4em]"
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
           />
         </label>
 
-        <SpringButton
-          type="submit"
-          disabled={!canSubmit}
-          className="w-full rounded-xl bg-ihs-olive px-4 py-3 text-sm font-bold uppercase tracking-widest text-white shadow-glow disabled:cursor-not-allowed disabled:bg-ihs-elevated disabled:text-ihs-muted disabled:shadow-none"
-        >
+        <SpringButton type="submit" disabled={!canSubmit} className="w-full">
           {loading ? 'Authenticating…' : 'Open Vault'}
         </SpringButton>
       </form>

@@ -44,7 +44,7 @@ export function FadeUp({
     <motion.div
       className={className}
       variants={{
-        hidden: { opacity: 0, y: 18 },
+        hidden: { opacity: 0, y: 16 },
         show: { opacity: 1, y: 0, transition: { ...springSoft, delay } },
       }}
     >
@@ -56,12 +56,13 @@ export function FadeUp({
 export function SpotlightCard({
   children,
   className = '',
+  tone = 'light',
   ...props
-}: HTMLMotionProps<'div'> & { children: ReactNode }) {
+}: HTMLMotionProps<'div'> & { children: ReactNode; tone?: 'light' | 'deep' }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const x = useMotionValue(50);
   const y = useMotionValue(30);
-  const background = useMotionTemplate`radial-gradient(420px circle at ${x}% ${y}%, rgba(61,220,151,0.14), transparent 42%)`;
+  const background = useMotionTemplate`radial-gradient(380px circle at ${x}% ${y}%, rgba(34,197,94,0.12), transparent 45%)`;
 
   const onMove = (e: MouseEvent<HTMLDivElement>) => {
     const el = ref.current;
@@ -75,14 +76,16 @@ export function SpotlightCard({
     <motion.div
       ref={ref}
       onMouseMove={onMove}
-      whileHover={{ y: -2 }}
+      whileHover={{ y: -4 }}
       transition={springSoft}
-      className={`glass-card overflow-hidden rounded-2xl ${className}`}
+      className={`relative overflow-hidden ${
+        tone === 'deep' ? 'ihs-card-deep' : 'ihs-card'
+      } transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-emerald-950/10 ${className}`}
       {...props}
     >
       <motion.div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-80"
+        className="pointer-events-none absolute inset-0 opacity-70"
         style={{ background }}
       />
       <div className="relative z-[1]">{children}</div>
@@ -93,14 +96,22 @@ export function SpotlightCard({
 export function SpringButton({
   children,
   className = '',
+  variant = 'primary',
   ...props
-}: HTMLMotionProps<'button'>) {
+}: HTMLMotionProps<'button'> & { variant?: 'primary' | 'ghost' | 'soft' }) {
+  const base =
+    variant === 'ghost'
+      ? 'rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold uppercase tracking-wider text-[#143525] shadow-sm transition-all duration-200 hover:scale-[1.02] hover:border-slate-300'
+      : variant === 'soft'
+        ? 'rounded-full bg-[#E8F5E9] px-6 py-3 text-sm font-semibold uppercase tracking-wider text-[#143525] border border-[#DCFCE7] transition-all duration-200 hover:scale-[1.02]'
+        : 'rounded-full px-6 py-3 bg-[#143525] text-white hover:bg-[#1C4B35] transition-all duration-200 hover:scale-[1.02] shadow-sm text-sm font-semibold uppercase tracking-wider';
+
   return (
     <motion.button
       whileHover={{ scale: 1.02 }}
-      whileTap={{ scale: 0.96 }}
+      whileTap={{ scale: 0.97 }}
       transition={springSnappy}
-      className={className}
+      className={`${base} disabled:cursor-not-allowed disabled:opacity-55 ${className}`}
       {...props}
     >
       {children}
@@ -115,28 +126,43 @@ export function StatusPulse({
   label: string;
   tone?: 'mint' | 'amber' | 'red' | 'sky';
 }) {
-  const toneClass =
+  const wrap =
     tone === 'amber'
-      ? 'border-ihs-warning/40 bg-ihs-warning/10 text-amber-300'
+      ? 'bg-amber-50 text-amber-800 border-amber-200'
       : tone === 'red'
-        ? 'border-ihs-danger/40 bg-ihs-danger/10 text-rose-300'
+        ? 'bg-rose-50 text-rose-700 border-rose-200'
         : tone === 'sky'
-          ? 'border-sky-400/40 bg-sky-400/10 text-sky-300'
-          : 'border-ihs-olive/40 bg-ihs-olive/15 text-ihs-mint';
-  const dotClass =
+          ? 'bg-sky-50 text-sky-800 border-sky-200'
+          : 'bg-[#E8F5E9] text-[#143525] border-[#DCFCE7]';
+
+  const core =
     tone === 'amber'
-      ? 'bg-ihs-warning'
+      ? 'bg-amber-500'
       : tone === 'red'
-        ? 'bg-ihs-danger'
+        ? 'bg-rose-500'
+        : tone === 'sky'
+          ? 'bg-sky-500'
+          : 'bg-[#22C55E]';
+
+  const ring =
+    tone === 'amber'
+      ? 'bg-amber-400'
+      : tone === 'red'
+        ? 'bg-rose-400'
         : tone === 'sky'
           ? 'bg-sky-400'
-          : 'bg-ihs-mint';
+          : 'bg-emerald-400';
 
   return (
     <span
-      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold ${toneClass}`}
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${wrap}`}
     >
-      <span className={`status-breathe h-2 w-2 rounded-full ${dotClass}`} aria-hidden />
+      <span className="relative inline-flex h-2.5 w-2.5" aria-hidden>
+        <span
+          className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${ring}`}
+        />
+        <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${core}`} />
+      </span>
       {label}
     </span>
   );

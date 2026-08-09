@@ -77,33 +77,31 @@ function StepUpMfaForm() {
   };
 
   return (
-    <SpotlightCard className="w-full max-w-md p-8">
-      <p className="text-center text-[11px] font-bold uppercase tracking-[0.18em] text-amber-300">
-        Step-Up MFA · AAL3
-      </p>
-      <h1 className="mt-2 text-center font-serif text-3xl text-ihs-text">Verify Privileged Access</h1>
-      <p className="mt-3 text-center text-sm leading-relaxed text-ihs-muted">{reasonCopy}</p>
+    <SpotlightCard className="w-full max-w-md !rounded-3xl">
+      <p className="ihs-micro text-center">Step-Up MFA · AAL3</p>
+      <h1 className="mt-2 text-center font-serif text-3xl text-[#0F172A]">Verify Privileged Access</h1>
+      <p className="mt-3 text-center text-sm leading-relaxed text-[#4B5563]">{reasonCopy}</p>
 
       {error ? (
         <div
-          className="mt-5 rounded-xl border border-ihs-danger/50 bg-ihs-danger/15 px-3 py-3 text-center text-sm font-semibold text-rose-200"
+          className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-3 text-center text-sm font-semibold text-rose-700"
           role="alert"
         >
           {error}
         </div>
       ) : null}
 
-      <div className="relative mt-6 grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-black/35 p-1">
+      <div className="relative mt-6 grid grid-cols-2 gap-1 rounded-full bg-[#F4F7F4] p-1">
         <motion.div
-          className="absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-lg bg-ihs-olive shadow-glow"
+          className="absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-full bg-[#143525]"
           animate={{ left: method === 'totp' ? 4 : 'calc(50% + 0px)' }}
           transition={springSoft}
           aria-hidden
         />
         <button
           type="button"
-          className={`relative z-[1] rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wider ${
-            method === 'totp' ? 'text-white' : 'text-ihs-muted'
+          className={`relative z-[1] rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-wider ${
+            method === 'totp' ? 'text-white' : 'text-[#4B5563]'
           }`}
           onClick={() => setMethod('totp')}
         >
@@ -111,8 +109,8 @@ function StepUpMfaForm() {
         </button>
         <button
           type="button"
-          className={`relative z-[1] rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wider ${
-            method === 'webauthn' ? 'text-white' : 'text-ihs-muted'
+          className={`relative z-[1] rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-wider ${
+            method === 'webauthn' ? 'text-white' : 'text-[#4B5563]'
           }`}
           onClick={() => setMethod('webauthn')}
         >
@@ -122,7 +120,7 @@ function StepUpMfaForm() {
 
       {method === 'totp' ? (
         <form onSubmit={onSubmit} className="mt-6 space-y-5">
-          <label className="block text-xs font-bold uppercase tracking-wide text-ihs-muted">
+          <label className="ihs-micro block">
             Authenticator Code
             <input
               type="text"
@@ -130,41 +128,38 @@ function StepUpMfaForm() {
               autoComplete="one-time-code"
               maxLength={6}
               placeholder="123456"
-              className="mt-2 w-full rounded-xl border border-white/10 bg-black/35 px-3 py-3 text-center font-mono text-lg tracking-[0.35em] text-ihs-text outline-none focus:border-ihs-mint/50"
+              className="ihs-input text-center font-mono text-lg tracking-[0.35em]"
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
               required
             />
           </label>
-          <SpringButton
-            type="submit"
-            disabled={loading || code.length !== 6}
-            className="w-full rounded-xl bg-ihs-olive px-4 py-3 text-sm font-bold uppercase tracking-widest text-white shadow-glow disabled:cursor-not-allowed disabled:bg-ihs-elevated disabled:text-ihs-muted disabled:shadow-none"
-          >
+          <SpringButton type="submit" disabled={loading || code.length !== 6} className="w-full">
             {loading ? 'Verifying…' : 'Elevate to AAL3'}
           </SpringButton>
         </form>
       ) : (
         <div className="mt-6 space-y-4">
-          <p className="text-sm leading-relaxed text-ihs-muted">
+          <p className="text-sm leading-relaxed text-[#4B5563]">
             Insert or tap your registered security key. This pilot path simulates WebAuthn assertion
             and then mints an AAL3 session with{' '}
-            <code className="text-ihs-mint">superadmin:tenant:write</code>.
+            <code className="text-[#143525]">superadmin:tenant:write</code>.
           </p>
           <SpringButton
             type="button"
+            variant="ghost"
             disabled={loading}
             onClick={() => void onWebAuthn()}
-            className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-bold uppercase tracking-widest text-ihs-text disabled:opacity-60"
+            className="w-full"
           >
             {loading ? 'Waiting for key…' : 'Use Hardware Security Key'}
           </SpringButton>
         </div>
       )}
 
-      <p className="mt-6 text-center text-xs text-ihs-muted">
+      <p className="mt-6 text-center text-xs text-[#4B5563]">
         Return to{' '}
-        <Link href="/" className="text-ihs-mint underline-offset-2 hover:underline">
+        <Link href="/" className="font-semibold text-[#143525] underline-offset-2 hover:underline">
           Operations Hub
         </Link>
       </p>
@@ -174,8 +169,8 @@ function StepUpMfaForm() {
 
 export default function StepUpMfaPage() {
   return (
-    <div className="ambient-spot flex min-h-screen items-center justify-center px-4 py-12">
-      <Suspense fallback={<div className="text-sm text-ihs-muted">Preparing step-up challenge…</div>}>
+    <div className="ihs-shell flex min-h-screen items-center justify-center px-4 py-12">
+      <Suspense fallback={<div className="text-sm text-[#4B5563]">Preparing step-up challenge…</div>}>
         <StepUpMfaForm />
       </Suspense>
     </div>

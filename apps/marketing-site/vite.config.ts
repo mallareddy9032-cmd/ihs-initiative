@@ -19,4 +19,11 @@ export default defineConfig({
     host: true,
     strictPort: true,
   },
+  preview: {
+    port: 3006,
+    host: true,
+    strictPort: true,
+  },
+  // SPA fallback so /pricing works on refresh in Vite preview / static hosts.
+  appType: 'spa',
 });

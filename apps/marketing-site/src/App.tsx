@@ -39,6 +39,8 @@ const NAV = [
   { id: 'contact', label: 'Contact' },
 ] as const;
 
+const PRICING_HREF = '/pricing';
+
 const CARE_NODES = [
   {
     id: 'sos',
@@ -385,6 +387,9 @@ export default function App() {
           </a>
 
           <nav className="nav-anchors" aria-label="Primary">
+            <a href={PRICING_HREF} className="ios-press">
+              Pricing
+            </a>
             {NAV.map((item) => (
               <a key={item.id} href={`#${item.id}`} className="ios-press">
                 {item.label}
@@ -393,6 +398,9 @@ export default function App() {
           </nav>
 
           <div className="header-actions">
+            <a className="btn btn-ghost ios-press" href={PRICING_HREF}>
+              View Plans
+            </a>
             <a className="btn btn-ghost ios-press" href={WHATSAPP} target="_blank" rel="noreferrer">
               💬 WhatsApp
             </a>

@@ -4,7 +4,13 @@ import type {
   ClinicalChartWithRx,
   DispatchRecord,
   EPrescription,
+  Invoice,
+  InvoiceStatus,
   Patient,
+  PlanTier,
+  Subscription,
+  SubscriptionStatus,
+  SubscriptionWithInvoices,
   TriageCase,
   TriageCaseWithDispatch,
   TriageServiceType,
@@ -26,6 +32,8 @@ type MockStore = {
   dispatchRecords: DispatchRecord[];
   clinicalCharts: ClinicalChart[];
   prescriptions: EPrescription[];
+  subscriptions: Subscription[];
+  invoices: Invoice[];
 };
 
 function seedStore(): MockStore {
@@ -92,6 +100,65 @@ function seedStore(): MockStore {
     dispatchRecords: [dispatch],
     clinicalCharts: [],
     prescriptions: [],
+    subscriptions: [
+      {
+        id: 'sub-local-essential',
+        userId: 'IHS-8802',
+        tenantId: 'tenant-antp',
+        planTier: 'PATIENT_ESSENTIAL',
+        status: 'ACTIVE',
+        razorpaySubId: 'sub_mock_essential_seed',
+        razorpayPlanId: 'plan_ihs_patient_essential_monthly',
+        currentPeriodStart: stamp,
+        currentPeriodEnd: new Date(stamp.getTime() + 30 * 24 * 60 * 60 * 1000),
+        cancelAtPeriodEnd: false,
+        createdAt: stamp,
+        updatedAt: stamp,
+      },
+      {
+        id: 'sub-local-clinical',
+        userId: 'DOC-101',
+        tenantId: 'tenant-antp-clinic',
+        planTier: 'CLINICAL_PRO',
+        status: 'ACTIVE',
+        razorpaySubId: 'sub_mock_clinical_seed',
+        razorpayPlanId: 'plan_ihs_clinical_pro_monthly',
+        currentPeriodStart: stamp,
+        currentPeriodEnd: new Date(stamp.getTime() + 30 * 24 * 60 * 60 * 1000),
+        cancelAtPeriodEnd: false,
+        createdAt: stamp,
+        updatedAt: stamp,
+      },
+      {
+        id: 'sub-local-enterprise',
+        userId: 'SUPER-001',
+        tenantId: 'tenant-antp-ops',
+        planTier: 'ENTERPRISE_OPS',
+        status: 'ACTIVE',
+        razorpaySubId: 'sub_mock_enterprise_seed',
+        razorpayPlanId: 'plan_ihs_enterprise_ops_annual',
+        currentPeriodStart: stamp,
+        currentPeriodEnd: new Date(stamp.getTime() + 365 * 24 * 60 * 60 * 1000),
+        cancelAtPeriodEnd: false,
+        createdAt: stamp,
+        updatedAt: stamp,
+      },
+    ],
+    invoices: [
+      {
+        id: 'inv-local-1',
+        subscriptionId: 'sub-local-essential',
+        amount: 169,
+        taxAmount: 30,
+        currency: 'INR',
+        hsnSacCode: '998313',
+        invoiceNumber: 'IHS-INV-2026-0001',
+        gstin: '37AAAAA0000A1Z5',
+        pdfUrl: '/api/billing/invoices/IHS-INV-2026-0001.pdf',
+        status: 'PAID',
+        createdAt: stamp,
+      },
+    ],
   };
 }
 
@@ -188,6 +255,45 @@ export type IhsDbClient = {
     }) => Promise<ClinicalChartWithRx>;
     findMany: (args?: { where?: { clinicianUid?: string } }) => Promise<ClinicalChartWithRx[]>;
   };
+  subscription: {
+    findByUserId: (userId: string) => Promise<SubscriptionWithInvoices | null>;
+    findByTenantId: (tenantId: string) => Promise<SubscriptionWithInvoices | null>;
+    findByRazorpaySubId: (razorpaySubId: string) => Promise<SubscriptionWithInvoices | null>;
+    upsertForUser: (args: {
+      userId: string;
+      tenantId: string;
+      planTier: PlanTier;
+      status: SubscriptionStatus;
+      razorpaySubId?: string | null;
+      razorpayPlanId?: string | null;
+      currentPeriodStart?: Date | null;
+      currentPeriodEnd?: Date | null;
+      cancelAtPeriodEnd?: boolean;
+    }) => Promise<SubscriptionWithInvoices>;
+    updateStatus: (args: {
+      id?: string;
+      razorpaySubId?: string;
+      status: SubscriptionStatus;
+      currentPeriodEnd?: Date | null;
+    }) => Promise<SubscriptionWithInvoices | null>;
+  };
+  invoice: {
+    create: (args: {
+      data: {
+        subscriptionId: string;
+        amount: number;
+        taxAmount: number;
+        currency?: string;
+        hsnSacCode?: string;
+        invoiceNumber?: string;
+        gstin?: string | null;
+        pdfUrl?: string | null;
+        status?: InvoiceStatus;
+      };
+    }) => Promise<Invoice>;
+    findManyBySubscription: (subscriptionId: string) => Promise<Invoice[]>;
+  };
+  vaultUsageBytes: (patientId: string) => Promise<number>;
 };
 
 export function createMockDbClient(): IhsDbClient {
@@ -366,5 +472,114 @@ export function createMockDbClient(): IhsDbClient {
           .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
       },
     },
+    subscription: {
+      async findByUserId(userId) {
+        const row = store().subscriptions.find((s) => s.userId === userId);
+        if (!row) return null;
+        return withInvoices(row);
+      },
+      async findByTenantId(tenantId) {
+        const row = store().subscriptions.find((s) => s.tenantId === tenantId);
+        if (!row) return null;
+        return withInvoices(row);
+      },
+      async findByRazorpaySubId(razorpaySubId) {
+        const row = store().subscriptions.find((s) => s.razorpaySubId === razorpaySubId);
+        if (!row) return null;
+        return withInvoices(row);
+      },
+      async upsertForUser(args) {
+        const db = store();
+        const existing = db.subscriptions.find((s) => s.userId === args.userId);
+        const stamp = now();
+        if (existing) {
+          existing.tenantId = args.tenantId;
+          existing.planTier = args.planTier;
+          existing.status = args.status;
+          if (args.razorpaySubId !== undefined) existing.razorpaySubId = args.razorpaySubId;
+          if (args.razorpayPlanId !== undefined) existing.razorpayPlanId = args.razorpayPlanId;
+          if (args.currentPeriodStart !== undefined) {
+            existing.currentPeriodStart = args.currentPeriodStart;
+          }
+          if (args.currentPeriodEnd !== undefined) {
+            existing.currentPeriodEnd = args.currentPeriodEnd;
+          }
+          if (typeof args.cancelAtPeriodEnd === 'boolean') {
+            existing.cancelAtPeriodEnd = args.cancelAtPeriodEnd;
+          }
+          existing.updatedAt = stamp;
+          return withInvoices(existing);
+        }
+        const created: Subscription = {
+          id: randomUUID(),
+          userId: args.userId,
+          tenantId: args.tenantId,
+          planTier: args.planTier,
+          status: args.status,
+          razorpaySubId: args.razorpaySubId ?? null,
+          razorpayPlanId: args.razorpayPlanId ?? null,
+          currentPeriodStart: args.currentPeriodStart ?? stamp,
+          currentPeriodEnd:
+            args.currentPeriodEnd ?? new Date(stamp.getTime() + 30 * 24 * 60 * 60 * 1000),
+          cancelAtPeriodEnd: args.cancelAtPeriodEnd ?? false,
+          createdAt: stamp,
+          updatedAt: stamp,
+        };
+        db.subscriptions.push(created);
+        return withInvoices(created);
+      },
+      async updateStatus(args) {
+        const row = store().subscriptions.find(
+          (s) =>
+            (args.id && s.id === args.id) ||
+            (args.razorpaySubId && s.razorpaySubId === args.razorpaySubId),
+        );
+        if (!row) return null;
+        row.status = args.status;
+        if (args.currentPeriodEnd !== undefined) row.currentPeriodEnd = args.currentPeriodEnd;
+        row.updatedAt = now();
+        return withInvoices(row);
+      },
+    },
+    invoice: {
+      async create({ data }) {
+        const stamp = now();
+        const seq = store().invoices.length + 1;
+        const row: Invoice = {
+          id: randomUUID(),
+          subscriptionId: data.subscriptionId,
+          amount: data.amount,
+          taxAmount: data.taxAmount,
+          currency: data.currency ?? 'INR',
+          hsnSacCode: data.hsnSacCode ?? '998313',
+          invoiceNumber: data.invoiceNumber ?? `IHS-INV-${stamp.getFullYear()}-${String(seq).padStart(4, '0')}`,
+          gstin: data.gstin ?? '37AAAAA0000A1Z5',
+          pdfUrl: data.pdfUrl ?? null,
+          status: data.status ?? 'PAID',
+          createdAt: stamp,
+        };
+        store().invoices.push(row);
+        return row;
+      },
+      async findManyBySubscription(subscriptionId) {
+        return store()
+          .invoices.filter((inv) => inv.subscriptionId === subscriptionId)
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      },
+    },
+    async vaultUsageBytes(patientId) {
+      return store()
+        .vaultObjects.filter((v) => v.patientId === patientId)
+        .reduce((sum, row) => sum + Buffer.byteLength(row.ciphertext, 'utf8'), 0);
+    },
+  };
+}
+
+function withInvoices(row: Subscription): SubscriptionWithInvoices {
+  return {
+    ...row,
+    invoices: store()
+      .invoices.filter((inv) => inv.subscriptionId === row.id)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()),
   };
 }

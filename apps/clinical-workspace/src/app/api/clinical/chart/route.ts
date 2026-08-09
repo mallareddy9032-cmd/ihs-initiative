@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { evaluateEntitlement } from '@ihs/auth-client';
 import { db } from '@ihs/db';
 
 type RxInput = {
@@ -122,6 +123,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const prescriptions = parsePrescriptions((body as { prescriptions?: unknown }).prescriptions);
+  if (prescriptions.length > 0) {
+    const sub = await db.subscription.findByUserId(clinicianUid);
+    const gate = evaluateEntitlement('issue_erx', {
+      status: sub?.status ?? 'INACTIVE',
+      planTier: sub?.planTier ?? 'PATIENT_ESSENTIAL',
+    });
+    if (!gate.allowed) {
+      return NextResponse.json(
+        {
+          error: gate.message,
+          code: gate.code,
+          upgradeHint: 'Activate Clinical Pro to issue e-prescriptions.',
+        },
+        { status: 402 },
+      );
+    }
+  }
+
   const chart = await db.clinicalChart.create({
     data: {
       patientIhsUid,
@@ -131,7 +151,7 @@ export async function POST(request: NextRequest) {
       objective,
       assessment,
       plan,
-      prescriptions: parsePrescriptions((body as { prescriptions?: unknown }).prescriptions),
+      prescriptions,
     },
   });
 

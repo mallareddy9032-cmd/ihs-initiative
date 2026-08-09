@@ -1,9 +1,17 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { AUTH_COOKIE_NAME, roleAllowed, verifyAuthToken } from '@ihs/auth-client';
+import {
+  AUTH_COOKIE_NAME,
+  LOCAL_DEV_JWT_SECRET,
+  roleAllowed,
+  verifyAuthToken,
+} from '@ihs/auth-client';
 import { APP_ROLE_POLICY } from '@ihs/types';
 
-const JWT_SECRET = process.env.JWT_SECRET_KEY || 'FATAL_UNCONFIGURED_SECRET';
+const JWT_SECRET =
+  process.env.JWT_SECRET_KEY && process.env.JWT_SECRET_KEY.trim().length > 0
+    ? process.env.JWT_SECRET_KEY
+    : LOCAL_DEV_JWT_SECRET;
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

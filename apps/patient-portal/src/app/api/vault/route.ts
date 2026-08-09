@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
+import { evaluateEntitlement, requiresShieldForLargeUpload } from '@ihs/auth-client';
 import { db } from '@ihs/db';
 
 function integrityHash(plaintext: string): string {
@@ -91,6 +92,45 @@ export async function POST(request: NextRequest) {
   const source = plaintext ?? ciphertextIn ?? '';
   const ciphertext = ciphertextIn ?? Buffer.from(source, 'utf8').toString('base64');
   const hash = integrityHash(plaintext ?? ciphertext);
+
+  const uploadBytes = Buffer.byteLength(ciphertext, 'utf8');
+  const usedBytes = await db.vaultUsageBytes(patient.id);
+  const sub = await db.subscription.findByUserId(ihsUid);
+  const planTier = sub?.planTier ?? 'PATIENT_ESSENTIAL';
+
+  if (
+    requiresShieldForLargeUpload(uploadBytes) &&
+    planTier !== 'PATIENT_SHIELD' &&
+    planTier !== 'CLINICAL_PRO' &&
+    planTier !== 'ENTERPRISE_OPS'
+  ) {
+    return NextResponse.json(
+      {
+        error: 'Uploads larger than 5GB require Patient Shield or higher.',
+        code: 'PLAN_NOT_PERMITTED',
+        upgradeHint: 'Upgrade to Patient Shield for 50GB vault capacity.',
+      },
+      { status: 402 },
+    );
+  }
+
+  const gate = evaluateEntitlement('vault_upload', {
+    status: sub?.status ?? 'INACTIVE',
+    planTier,
+    uploadBytes,
+    vaultUsedBytes: usedBytes,
+  });
+  if (!gate.allowed) {
+    return NextResponse.json(
+      {
+        error: gate.message,
+        code: gate.code,
+        vaultCapBytes: gate.vaultCapBytes,
+        upgradeHint: 'Upgrade to Patient Shield for 50GB vault capacity.',
+      },
+      { status: 402 },
+    );
+  }
 
   const created = await db.vaultObject.create({
     data: {

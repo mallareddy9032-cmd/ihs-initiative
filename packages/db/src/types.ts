@@ -91,3 +91,51 @@ export type TriageCaseWithDispatch = TriageCase & {
 export type ClinicalChartWithRx = ClinicalChart & {
   prescriptions: EPrescription[];
 };
+
+export type SubscriptionStatus =
+  | 'INACTIVE'
+  | 'ACTIVE'
+  | 'PAST_DUE'
+  | 'CANCELLED'
+  | 'HALTED';
+
+export type PlanTier =
+  | 'PATIENT_ESSENTIAL'
+  | 'PATIENT_SHIELD'
+  | 'CLINICAL_PRO'
+  | 'ENTERPRISE_OPS';
+
+export type InvoiceStatus = 'DRAFT' | 'PAID' | 'FAILED' | 'VOID';
+
+export type Subscription = {
+  id: string;
+  userId: string;
+  tenantId: string;
+  planTier: PlanTier;
+  status: SubscriptionStatus;
+  razorpaySubId: string | null;
+  razorpayPlanId: string | null;
+  currentPeriodStart: Date | null;
+  currentPeriodEnd: Date | null;
+  cancelAtPeriodEnd: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type Invoice = {
+  id: string;
+  subscriptionId: string;
+  amount: number;
+  taxAmount: number;
+  currency: string;
+  hsnSacCode: string;
+  invoiceNumber: string;
+  gstin: string | null;
+  pdfUrl: string | null;
+  status: InvoiceStatus;
+  createdAt: Date;
+};
+
+export type SubscriptionWithInvoices = Subscription & {
+  invoices: Invoice[];
+};
