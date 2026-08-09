@@ -47,10 +47,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
   }
 
-  const uid =
+  const uidRaw =
     typeof (body as { ihs_uid?: unknown })?.ihs_uid === 'string'
       ? (body as { ihs_uid: string }).ihs_uid
-      : '';
+      : typeof (body as { uid?: unknown })?.uid === 'string'
+        ? (body as { uid: string }).uid
+        : '';
+  const uid = uidRaw;
   const pin =
     typeof (body as { pin?: unknown })?.pin === 'string' ? (body as { pin: string }).pin : '';
   const forceLocalFallback = (body as { local_fallback?: unknown })?.local_fallback === true;
